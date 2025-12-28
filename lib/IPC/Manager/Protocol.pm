@@ -31,7 +31,6 @@ sub requeue_message  { croak "Not Implemented" }
 sub send_message     { croak "Not Implemented" }
 sub client_pid       { croak "Not Implemented" }
 sub client_exists    { croak "Not Implemented" }
-sub client_remote    { croak "Not Implemented" }
 
 # May override
 sub ready     { 1 }
@@ -77,22 +76,21 @@ sub terminate {
         from      => $self->{+ID},
     );
 
-    local $MAIN::DEBUG = 1;
     $self->broadcast($msg);
 }
 
 sub connect {
     my $class = shift;
-    my ($info, $pid, $id) = @_;
+    my ($info, $pid, $id, %params) = @_;
 
-    return $class->new(INFO() => $info, ID() => $id, IS_MANAGER() => 0, PID() => $pid);
+    return $class->new(%params, INFO() => $info, ID() => $id, IS_MANAGER() => 0, PID() => $pid);
 }
 
 sub reconnect {
     my $class = shift;
-    my ($info, $pid, $id) = @_;
+    my ($info, $pid, $id, %params) = @_;
 
-    return $class->new(INFO() => $info, ID() => $id, IS_MANAGER() => 0, PID() => $pid, RECONNECT() => 1);
+    return $class->new(%params, INFO() => $info, ID() => $id, IS_MANAGER() => 0, PID() => $pid, RECONNECT() => 1);
 }
 
 sub disconnect {
@@ -106,16 +104,16 @@ sub disconnect {
     $self->pre_disconnect_hook;
 
     # Wait for any messages that are still being written
-    sleep 0.2 while $self->pending_messages;
-
-    if (my @ready = $self->get_messages) {
-        @ready = grep { !$_->is_terminate } @ready;
-        if (@ready) {
-            if ($handler) {
-                $self->$handler(\@ready);
-            }
-            else {
-                confess 'messages waiting at disconnect';
+    while ($self->pending_messages) {
+        if (my @ready = $self->get_messages) {
+            @ready = grep { !$_->is_terminate } @ready;
+            if (@ready) {
+                if ($handler) {
+                    $self->$handler(\@ready);
+                }
+                else {
+                    confess 'messages waiting at disconnect';
+                }
             }
         }
     }
@@ -150,16 +148,18 @@ sub post_fork_parent {
     my $self = shift;
     my ($child_pid) = @_;
     $self->{+SPAWN_PID} = $child_pid;
-    $self->{+MANAGER_PID} = $$;
+    $self->{+MANAGER_PID} = $child_pid;
     $self->{+PID} = $child_pid;
 }
 
 sub post_fork_child {
     my $self = shift;
     my ($parent_pid) = @_;
+
     $self->{+SPAWN_PID} = $$;
-    $self->{+MANAGER_PID} = $parent_pid;
+    $self->{+MANAGER_PID} = $$;
     $self->{+PID} = $$;
+    $self->{+IS_MANAGER} = $$;
 }
 
 sub client_running {
@@ -167,7 +167,6 @@ sub client_running {
     my ($client_id) = @_;
 
     return 0 unless $self->client_exists($client_id);
-    return -1 if $self->client_remote($client_id);
 
     my $pid = $self->client_pid($client_id);
     return pid_is_running($pid) ? 1 : 0;
@@ -175,6 +174,8 @@ sub client_running {
 
 sub DESTROY {
     my $self = shift;
+
+    return unless $self->{+PID};
 
     if ($self->{+PID} == $$) {
         $self->disconnect unless $self->{+DISCONNECTED};
@@ -185,7 +186,7 @@ sub DESTROY {
         IPC::Manager::Client->disconnect_local_clients(blessed($self), $self->{+INFO});
 
         while (my @clients = $self->clients) {
-            print STDERR "Waiting on: " . join(', ' => sort @clients) . "\n";
+            print STDOUT "Waiting on: " . join(', ' => sort @clients) . "\n";
             sleep 1;
         }
 

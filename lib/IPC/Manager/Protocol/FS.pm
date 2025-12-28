@@ -12,17 +12,61 @@ use parent 'IPC::Manager::Protocol';
 use Object::HashBase qw{
     +path
     +pidfile
+    +resume_file
 };
-
-# Remote clients not supported
-sub client_remote { 0 }
 
 sub ready { -d $_[0]->{+INFO} }
 
-sub check_path      { croak "Not Implemented" }
-sub client_pid_file { croak "Not Implemented" }
-sub make_path       { croak "Not Implemented" }
-sub path_type       { croak "Not Implemented" }
+sub check_path { croak "Not Implemented" }
+sub make_path  { croak "Not Implemented" }
+sub path_type  { croak "Not Implemented" }
+
+sub resume_file {
+    my $self = shift;
+    return $self->{+RESUME_FILE} //= File::Spec->catfile($self->{+INFO}, $self->{+ID} . ".resume");
+}
+
+sub have_resume_file { -e $_[0]->resume_file }
+
+sub client_pid_file {
+    my $self = shift;
+    my ($client_id) = @_;
+
+    return File::Spec->catfile($self->{+INFO}, $client_id . ".pid");
+}
+
+{
+    no warnings 'once';
+    *requeue_messages = \&requeue_message;
+}
+sub requeue_message {
+    my $self = shift;
+    $self->pid_check;
+    open(my $fh, '>>', $self->resume_file) or die "Could not open resume file: $!";
+    for my $msg (@_) {
+        print $fh $self->{+SERIALIZER}->serialize($msg), "\n";
+    }
+    close($fh);
+}
+
+sub read_resume_file {
+    my $self = shift;
+
+    my @out;
+
+    my $rf = $self->resume_file;
+    return @out unless -e $rf;
+
+    open(my $fh, '<', $rf) or die "Could not open resume file: $!";
+    while (my $line = <$fh>) {
+        push @out => $line;
+    }
+    close($fh);
+
+    unlink($rf) or die "Could not unlink resume file";
+
+    return @out;
+}
 
 sub pidfile {
     my $self = shift;
@@ -63,14 +107,14 @@ sub init {
 
 sub listen {
     my $class = shift;
-    my ($template, @args) = @_;
+    my (%params) = @_;
 
-    $template //= "PerlIPCManager-$$-XXXXXX";
+    my $template = $params{template} // "PerlIPCManager-$$-XXXXXX";
 
     my $id = 'manager';
-    my $dir = tempdir($template, TMPDIR => 1, CLEANUP => 0, @args);
+    my $dir = tempdir($template, TMPDIR => 1, CLEANUP => 0);
 
-    return $class->new(INFO() => $dir, ID() => 'manager', IS_MANAGER() => 1, MANAGER_PID() => $$);
+    return $class->new(%params, INFO() => $dir, ID() => 'manager', IS_MANAGER() => 1, MANAGER_PID() => $$);
 }
 
 sub clear_pid {
@@ -114,6 +158,7 @@ sub clients {
     for my $file (readdir($dh)) {
         next if $file eq $self->{+ID};
         next if $file =~ m/^(\.|_)/;
+        next if $file =~ m/\.pid$/;
         $self->client_exists($file) or next;
 
         push @out => $file;

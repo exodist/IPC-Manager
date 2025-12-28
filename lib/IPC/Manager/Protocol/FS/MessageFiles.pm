@@ -50,6 +50,7 @@ sub pending_messages {
 
 sub ready_messages {
     my $self = shift;
+    return 1 if $self->have_resume_file;
     return $self->message_files('ready') ? 1 : 0;
 }
 
@@ -78,6 +79,8 @@ sub get_messages {
         unlink($full) or die "Could not unlink file '$full': $!";
         push @out => $content;
     }
+
+    push @out => $self->read_resume_file;
 
     return sort { $a->stamp <=> $b->stamp } map { IPC::Manager::Message->new($self->{+SERIALIZER}->deserialize($_)) } @out;
 }
@@ -114,13 +117,6 @@ sub broadcast {
     $self->pid_check;
 
     $self->_write_message_file($msg, $_) for $self->clients;
-}
-
-sub requeue_message {
-    my $self = shift;
-    my ($msg) = @_;
-    $self->pid_check;
-    $self->_write_message_file($msg, $self->{+ID});
 }
 
 sub send_message {

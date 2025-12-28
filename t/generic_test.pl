@@ -2,19 +2,31 @@ use Test2::V1 -ipP;
 use Test2::IPC;
 use Time::HiRes qw/sleep/;
 use Carp::Always;
+use Data::Dumper;
 use POSIX;
 
 use IPC::Manager;
 
-my @msgs;
 my $man = IPC::Manager->new(
     protocol       => $main::PROTOCOL,
-    handle_message => sub { push @msgs => pop },
+    handle_message => sub {
+        my ($con, $msg) = @_;
+
+        if ($msg->content->{ping}) {
+            $con->send_message($msg->from, {pong => 1});
+        }
+        else {
+            die "Unexpected message: " . Dumper($msg);
+        }
+    },
 );
 
 isa_ok($man, ['IPC::Manager'], "Created an instance");
 
-my $info = $man->start;
+my $info = eval { $man->spawn() } or do {
+    print STDERR $@;
+    POSIX::_exit(255);
+};
 ok($info, "Got connection info ($info)");
 
 my $con1 = $man->connect('con1');
@@ -53,40 +65,45 @@ like(
 like([$con1->get_messages], [], "No messages");
 like([$con2->get_messages], [], "No messages");
 
-$con1->send_message('manager' => {blah => 1});
-ok(!@msgs, "No manager messages yet");
-$man->iterate;
+$con1->send_message('manager' => {ping => 1});
+
+sleep 0.02 until $con1->ready_messages;
+
 like(
-    \@msgs,
+    [$con1->get_messages],
     [{
         id      => T(),
         stamp   => T(),
-        from    => 'con1',
-        to      => 'manager',
-        content => {blah => 1},
+        from    => 'manager',
+        to      => 'con1',
+        content => {pong => 1},
     }],
-    "Got message sent from con1 to con2"
+    "Got message sent from con1 to manager and a response received"
 );
 
 my $pid = fork;
 
 if ($pid) {
-    diag "Parent $$, child $pid\n";
-    diag "[$$] Waiting for child process...\n";
-    sleep 0.2 until $man->client_exists('con3');
-    diag "[$$] Terminating...\n";
-    $man = undef;
-    diag "[$$] Terminted...\n";
-    diag "[$$] Waiting for child process to exit...\n";
+    note "Parent $$, child $pid\n";
+    note "[$$] Waiting for child process...\n";
+    sleep 0.2 until $con1->client_exists('con3');
+    note "[$$] Terminating...\n";
+
+    $con1 = undef;
+    $con2 = undef;
+
+    $man = $man->stop;
+    note "[$$] Terminted...\n";
+    note "[$$] Waiting for child process to exit...\n";
     waitpid($pid, 0);
-    diag "[$$] Child has exited ($?)\n";
+    note "[$$] Child has exited ($?)\n";
     ok(!$?, "Child exited cleanly");
 }
 else {
     my $con3 = $man->connect('con3');
     $man = undef;
 
-    diag "[$$] Child is waiting for a message.\n";
+    note "[$$] Child is waiting for a message.\n";
     my @msgs;
     for (1 .. 200) {
         @msgs = $con3->get_messages;
@@ -94,7 +111,7 @@ else {
         sleep 0.02;
     }
 
-    diag "[$$] Child got a message.\n";
+    note "[$$] Child got a message.\n";
 
     like(
         \@msgs,
@@ -108,12 +125,12 @@ else {
         "Got termination message"
     );
 
-    diag "[$$] Child disconnecting\n";
+    note "[$$] Child disconnecting\n";
     $con3->disconnect;
 
-    diag "[$$] Child exiting\n";
+    note "[$$] Child exiting\n";
     eval { exit(0) };
-    diag "[$$] Forcing child exit\n";
+    note "[$$] Forcing child exit\n";
     POSIX::_exit(255);
 }
 

@@ -3,11 +3,13 @@ use strict;
 use warnings;
 
 use Carp qw/croak/;
+use Time::HiRes qw/sleep time/;
 use Scalar::Util qw/blessed/;
+use Test2::Util::UUID qw/gen_uuid/;
+
 use Scope::Guard();
 use POSIX();
 
-use Test2::Util::UUID qw/gen_uuid/;
 use Object::HashBase qw{
     <protocol
     <prot_inst
@@ -120,11 +122,27 @@ sub iterate {
     }
 }
 
+sub send_message {
+    my $self = shift;
+    my ($to, $content) = @_;
+
+    my $msg = IPC::Manager::Message->new(
+        from    => $self->{+PROT_INST}->id,
+        to      => $to,
+        stamp   => time,
+        content => $content,
+    );
+
+    $self->{+PROT_INST}->send_message($msg);
+    return $msg;
+}
+
+
 sub spawn {
     my $self = shift;
-    my ($cb) = @_;
+    my ($cb, %params) = @_;
 
-    my $inst = $self->{+PROTOCOL}->spawn(@_);
+    my $inst = $self->{+PROTOCOL}->spawn(%params);
     $self->{+PROT_INFO} = $inst->info;
 
     my $parent = $$;
@@ -136,6 +154,8 @@ sub spawn {
         return $self->{+PROT_INFO};
     }
 
+    require IPC::Manager::Client;
+
     $inst->post_fork_child($parent);
 
     $self->{+PID}       = $$;
@@ -145,6 +165,7 @@ sub spawn {
 
     my $handler = sub {
         $inst->terminate;
+        $inst->DESTROY;
         POSIX::_exit(0);
     };
 
@@ -156,17 +177,24 @@ sub spawn {
         my ($run) = @_;
         my $out;
         local $@;
-        return $out if eval { $out = $run->(); 1 };
+        my $start = time;
+        if (eval { $out = $run->(); 1 }) {
+            my $delta = time - $start;
+            sleep(0.02 - $delta) if $delta < 0.02;
+            return $out;
+        }
         warn $@;
+        sleep 1;
         return 0;
     };
 
+    my $stop;
     my $ready   = sub { $inst->ready };
     my $iterate = sub { $self->iterate($cb) };
 
     $try->($iterate) while $try->($ready);
 
-    POSIX::_exit(0);
+    POSIX::_exit(255);
 }
 
 sub spawn_and_connect {
@@ -202,7 +230,7 @@ sub stop {
     my ($signal) = @_;
     $signal //= 'TERM';
 
-    my $pid = delete $self->{+PID};
+    my $pid  = delete $self->{+PID};
     my $inst = delete $self->{+PROT_INST};
     my $info = delete $self->{+PROT_INFO};
 

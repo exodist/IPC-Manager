@@ -1,65 +1,60 @@
-package IPC::Manager::Protocol::FS::AtomicPipe;
+package IPC::Manager::Protocol::FS::UnixSocket;
 use strict;
 use warnings;
 
 use File::Spec;
-use Atomic::Pipe;
 use Carp qw/croak/;
 use POSIX qw/mkfifo/;
+use IO::Socket::UNIX qw/SOCK_DGRAM/;
+use IO::Select;
 
 use parent 'IPC::Manager::Protocol::FS';
 use Object::HashBase qw{
-    permissions
-    +pipe
     +buffer
+    +socket
+    +select
 };
 
-sub check_path { -p $_[1] }
-sub path_type  { 'FIFO' }
+sub check_path { -S $_[1] }
+sub path_type  { 'UNIX Socket' }
+
+sub suspend { croak "suspend is not supported" }
 
 sub make_path {
     my $self = shift;
     my $path = $self->path;
-    my $perms = $self->{+PERMISSIONS} //= 0700;
-    mkfifo($path, $perms) or die "Failed to make fifo '$path': $!";
-    my $p = Atomic::Pipe->read_fifo($path);
-    $p->blocking(0);
-    $p->resize_or_max($p->max_size) if $p->max_size;
 
-    $self->{+PIPE} = $p;
+    my $s = IO::Socket::UNIX->new(
+        Type     => SOCK_DGRAM,
+        Local    => $path,
+        Blocking => 0,
+    ) or die "Cannot create reader socket: $!";
+
+    $self->{+SOCKET} = $s;
 }
 
 sub pre_disconnect_hook {
     my $self = shift;
-    unlink($self->{+PATH}) or warn "Could not unlink fifo: $!";
+    unlink($self->{+PATH}) or warn "Could not unlink socket: $!";
 }
 
 sub init {
     my $self = shift;
 
-    $self->SUPER::init();
-
     $self->{+BUFFER} //= [];
+
+    $self->SUPER::init();
 }
 
-sub pre_suspend_hook {
+sub select {
     my $self = shift;
 
-    $self->pid_check;
+    return $self->{+SELECT} if $self->{+SELECT};
 
-    # Get all messages and re-queue them
-    my $p = $self->{+PIPE};
+    my $sel = IO::Select->new;
+    $sel->add($self->{+SOCKET});
 
-    my @msgs;
-    while ($p->{$p->IN_BUFFER_SIZE}) {
-        push @msgs => $p->read_message;
-    }
-
-    if (@msgs) {
-        $self->requeue_message(@msgs);
-    }
-
-    $self->SUPER::pre_suspend_hook(@_);
+    return $self->{+SELECT} = $sel;
 }
 
 sub pending_messages {
@@ -68,16 +63,11 @@ sub pending_messages {
     $self->pid_check;
 
     return 1 if $self->have_resume_file;
+    return 1 if @{$self->{+BUFFER}};
 
-    my $p = $self->{+PIPE};
+    my $sel = $self->select;
 
-    $p->fill_buffer;
-
-    if ($p->{$p->IN_BUFFER_SIZE}) {
-        push @{$self->{+BUFFER}} => $self->{+PIPE}->read_message;
-        return 1;
-    }
-
+    return 1 if $sel->can_read(0);
     return 0;
 }
 
@@ -90,22 +80,26 @@ sub ready_messages {
 
     return 1 if @{$self->{+BUFFER}};
 
-    push @{$self->{+BUFFER}} => $self->{+PIPE}->read_message;
+    return 0 unless $self->pending_messages;
 
-    return 1 if @{$self->{+BUFFER}};
+    my $s = $self->{+SOCKET};
+    while (my $msg = <$s>) {
+        push @{$self->{+BUFFER}} => $msg;
+    }
+
     return 0;
 }
 
 sub get_messages {
     my $self = shift;
 
-    my $p = $self->{+PIPE};
-
     my @out;
 
     push @out => $self->read_resume_file;
     push @out => @{$self->{+BUFFER}};
-    while (my $msg = $p->read_message) {
+
+    my $s = $self->{+SOCKET};
+    while (my $msg = <$s>) {
         push @out => $msg;
     }
 
@@ -128,10 +122,14 @@ sub _send_message {
     $client_id //= $msg->client_id or croak "No client specified";
 
     $self->pid_check;
-    my $fifo = $self->client_exists($client_id) or die "'$client_id' is not a valid message recipient";
+    my $sock = $self->client_exists($client_id) or die "'$client_id' is not a valid message recipient";
 
-    my $p = Atomic::Pipe->write_fifo($fifo);
-    $p->write_message($self->{+SERIALIZER}->serialize($msg));
+    my $s = IO::Socket::UNIX->new(
+        Type => SOCK_DGRAM,
+        Peer => $sock,
+    ) or die "Cannot connect to socket: $!";
+
+    $s->send($self->{+SERIALIZER}->serialize($msg)) or die "Cannot send message: $!";
 }
 
 sub broadcast {

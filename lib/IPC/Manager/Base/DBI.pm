@@ -1,14 +1,15 @@
-package IPC::Manager::Protocol::DBI;
+package IPC::Manager::Base::DBI;
 use strict;
 use warnings;
 
 use Carp qw/croak/;
+use Scalar::Util qw/blessed/;
 use File::Temp qw/tempfile/;
 use IPC::Manager::Util qw/pid_is_running/;
 
 use DBI;
 
-use parent 'IPC::Manager::Protocol';
+use parent 'IPC::Manager::Client';
 use Object::HashBase qw{
     +dbh
     <user
@@ -25,29 +26,41 @@ sub escape { '' }
 sub pending_messages { 0 }
 sub ready_messages   { $_[0]->_get_message_ids ? 1 : 0 }
 
-sub post_fork_child {
-    my $self = shift;
-    $self->SUPER::post_fork_child();
-    delete $self->{+DBH};
-}
-
-sub post_fork_parent {
-    my $self = shift;
-    $self->SUPER::post_fork_parent();
-    delete $self->{+DBH};
-}
-
 sub dbh {
-    $_[0]->pid_check;
-    $_[0]->{+DBH} //= DBI->connect($_[0]->dsn, $_[0]->user, $_[0]->pass, $_[0]->attrs) or die "Could not connect";
+    my $this = shift;
+    my (%params) = @_;
+
+    return $this->{+DBH} if blessed($this) && $this->{+DBH};
+
+    my $dsn   = $params{dsn};
+    my $user  = $params{user};
+    my $pass  = $params{pass};
+    my $attrs = $params{attrs};
+
+    if (blessed($this)) {
+        $this->pid_check;
+        $dsn   //= $this->dsn;
+        $user  //= $this->user;
+        $pass  //= $this->pass;
+        $attrs //= $this->attrs;
+    }
+
+    croak "No DSN" unless $dsn;
+    $attrs //= {};
+
+    my $dbh = DBI->connect($dsn, $user, $pass, $attrs) or die "Could not connect";
+
+    $this->{+DBH} = $dbh if blessed($this);
+
+    return $dbh;
 }
 
 sub init_db {
-    my $self = shift;
+    my $this = shift;
 
-    my $dbh = $self->dbh;
+    my $dbh = $this->dbh(@_);
 
-    for my $sql ($self->table_sql) {
+    for my $sql ($this->table_sql) {
         $dbh->do($sql) or die $dbh->errstr;
     }
 }
@@ -66,10 +79,8 @@ sub init {
 
     my $id = $self->{+ID};
 
-    $self->init_db if $self->is_manager;
-
     if ($self->{+RECONNECT}) {
-        my $row = $self->_get_client($self->{+ID}) or die "The '$id' client does not exist";
+        my $row = $self->_get_peer($self->{+ID}) or die "The '$id' peer does not exist";
 
         if (my $pid = $row->{pid}) {
             croak "Looks like the connection is already running in pid $pid" if $pid && pid_is_running($pid);
@@ -78,50 +89,50 @@ sub init {
     else {
         my $dbh = $self->dbh;
         my $e   = $self->escape;
-        my $sth = $dbh->prepare("INSERT INTO ipcm_clients(${e}id${e}, ${e}pid${e}) VALUES (?, ?)") or die $dbh->errstr;
+        my $sth = $dbh->prepare("INSERT INTO ipcm_peers(${e}id${e}, ${e}pid${e}) VALUES (?, ?)") or die $dbh->errstr;
         $sth->execute($id, $self->{+PID}) or die $dbh->errstr;
     }
 }
 
-sub clients {
+sub peers {
     my $self = shift;
 
     my $dbh = $self->dbh;
     my $e   = $self->escape;
-    my $sth = $dbh->prepare("SELECT ${e}id${e} FROM ipcm_clients ORDER BY ${e}id${e} ASC") or die $dbh->errstr;
+    my $sth = $dbh->prepare("SELECT ${e}id${e} FROM ipcm_peers ORDER BY ${e}id${e} ASC") or die $dbh->errstr;
     $sth->execute();
 
     return map { $_->[0] } @{$sth->fetchall_arrayref([0])};
 }
 
-sub client_pid {
+sub peer_pid {
     my $self = shift;
     my ($id) = @_;
 
-    my $row = $self->_get_client($id) or return undef;
+    my $row = $self->_get_peer($id) or return undef;
     return $row->{pid} // undef;
 }
 
-sub client_exists {
+sub peer_exists {
     my $self = shift;
     my ($id) = @_;
-    return $self->_get_client($id) ? 1 : 0;
+    return $self->_get_peer($id) ? 1 : 0;
 }
 
-sub _get_client {
+sub _get_peer {
     my $self = shift;
     my ($id) = @_;
 
     my $dbh = $self->dbh;
     my $e   = $self->escape;
-    my $sth = $dbh->prepare("SELECT * FROM ipcm_clients WHERE ${e}id${e} = ?") or die $dbh->errstr;
+    my $sth = $dbh->prepare("SELECT * FROM ipcm_peers WHERE ${e}id${e} = ?") or die $dbh->errstr;
     $sth->execute($id);
     return $sth->fetchrow_hashref;
 }
 
 sub send_message {
     my $self = shift;
-    my ($msg) = @_;
+    my $msg = $self->build_message(@_);
 
     my $dbh = $self->dbh;
     my $e   = $self->escape;
@@ -176,20 +187,11 @@ sub requeue_message {
     $self->send_message($_) for @_;
 }
 
-sub broadcast {
-    my $self = shift;
-    my ($msg) = @_;
-
-    for my $client ($self->clients) {
-        $self->send_message($msg->clone(to => $client, broadcast => 1));
-    }
-}
-
 sub pre_disconnect_hook {
     my $self = shift;
 
     my $dbh = $self->dbh;
-    my $sth = $dbh->prepare("DELETE FROM ipcm_clients WHERE id = ?") or die $dbh->errstr;
+    my $sth = $dbh->prepare("DELETE FROM ipcm_peers WHERE id = ?") or die $dbh->errstr;
     $sth->execute($self->{+ID}) or die $dbh->errstr;
 }
 
@@ -198,7 +200,7 @@ sub pre_suspend_hook {
 
     my $dbh = $self->dbh;
     my $e   = $self->escape;
-    my $sth = $dbh->prepare("UPDATE ipcm_clients SET ${e}pid${e} = NULL WHERE ${e}id${e} = ?") or die $dbh->errstr;
+    my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}pid${e} = NULL WHERE ${e}id${e} = ?") or die $dbh->errstr;
     $sth->execute($self->{+ID}) or die $dbh->errstr;
 }
 

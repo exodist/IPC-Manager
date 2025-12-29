@@ -3,7 +3,7 @@ use warnings;
 
 {
     no warnings 'once';
-    $main::PROTOCOL = 'DBI::MariaDB';
+    $main::PROTOCOL = 'MariaDB';
 }
 
 do './t/generic_test.pl' or die $@;

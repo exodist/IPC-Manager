@@ -5,35 +5,27 @@ use Carp::Always;
 use Data::Dumper;
 use POSIX;
 
-use IPC::Manager;
+use IPC::Manager qw/ipcm_connect ipcm_spawn/;
 
-my $man = IPC::Manager->new(
-    protocol       => $main::PROTOCOL,
-    handle_message => sub {
-        my ($con, $msg) = @_;
+note("Using $main::PROTOCOL");
 
-        if ($msg->content->{ping}) {
-            $con->send_message($msg->from, {pong => 1});
-        }
-        else {
-            die "Unexpected message: " . Dumper($msg);
-        }
-    },
-);
+my $guard = ipcm_spawn(protocol => $main::PROTOCOL);
+my $info = "$guard";
 
-isa_ok($man, ['IPC::Manager'], "Created an instance");
+isa_ok($guard, ['IPC::Manager::Spawn'], "Got a spawn object");
+is($info, $guard->connect_string, "Stringifies");
+like($info, qr/^IPC::Manager::Client::\w+\|/, "String looks correct");
+note("Info: $info");
 
-my $info = eval { $man->spawn() } or do {
-    print STDERR $@;
-    POSIX::_exit(255);
-};
-ok($info, "Got connection info ($info)");
+my $con1 = ipcm_connect('con1' => $info);
+my $con2 = ipcm_connect('con2' => $info);
+note("Con: $con1");
 
-my $con1 = $man->connect('con1');
-isa_ok($con1, ['IPC::Manager::Client'], "Got a connection");
+isa_ok($con1, ['IPC::Manager::Client'], "Got a connection (con1)");
+isa_ok($con2, ['IPC::Manager::Client'], "Got a connection (con2)");
 
-my $con2 = IPC::Manager::Client->connect($man->connect_string, 'con2');
-isa_ok($con2, ['IPC::Manager::Client'], "Got a connection again");
+like([$con1->get_messages], [], "No messages");
+like([$con2->get_messages], [], "No messages");
 
 $con1->send_message(con2 => {hi   => 'there'});
 $con2->send_message(con1 => {ahoy => 'matey'});
@@ -65,75 +57,7 @@ like(
 like([$con1->get_messages], [], "No messages");
 like([$con2->get_messages], [], "No messages");
 
-$con1->send_message('manager' => {ping => 1});
-
-sleep 0.02 until $con1->ready_messages;
-
-like(
-    [$con1->get_messages],
-    [{
-        id      => T(),
-        stamp   => T(),
-        from    => 'manager',
-        to      => 'con1',
-        content => {pong => 1},
-    }],
-    "Got message sent from con1 to manager and a response received"
-);
-
-my $pid = fork;
-
-if ($pid) {
-    note "Parent $$, child $pid\n";
-    note "[$$] Waiting for child process...\n";
-    sleep 0.2 until $con1->client_exists('con3');
-    note "[$$] Terminating...\n";
-
-    $con1 = undef;
-    $con2 = undef;
-
-    $man = $man->stop;
-    note "[$$] Terminted...\n";
-    note "[$$] Waiting for child process to exit...\n";
-    waitpid($pid, 0);
-    note "[$$] Child has exited ($?)\n";
-    ok(!$?, "Child exited cleanly");
-}
-else {
-    my $con3 = $man->connect('con3');
-    $man = undef;
-
-    note "[$$] Child is waiting for a message.\n";
-    my @msgs;
-    for (1 .. 200) {
-        @msgs = $con3->get_messages;
-        last if @msgs;
-        sleep 0.02;
-    }
-
-    note "[$$] Child got a message.\n";
-
-    like(
-        \@msgs,
-        [{
-            id        => T(),
-            stamp     => T(),
-            broadcast => T(),
-            from      => 'manager',
-            content   => {terminate => 1},
-        }],
-        "Got termination message"
-    );
-
-    note "[$$] Child disconnecting\n";
-    $con3->disconnect;
-
-    note "[$$] Child exiting\n";
-    eval { exit(0) };
-    note "[$$] Forcing child exit\n";
-    POSIX::_exit(255);
-}
-
+$guard = undef;
 ok(!-e $info, "Info does not exist on the filesystem");
 
 done_testing;

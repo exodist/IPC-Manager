@@ -3,7 +3,7 @@ use warnings;
 
 {
     no warnings 'once';
-    $main::PROTOCOL = 'FS::MessageFiles';
+    $main::PROTOCOL = 'MessageFiles';
 }
 
 do './t/generic_test.pl' or die $@;

@@ -3,7 +3,7 @@ use warnings;
 
 {
     no warnings 'once';
-    $main::PROTOCOL = 'DBI::PostgreSQL';
+    $main::PROTOCOL = 'MySQL';
 }
 
 do './t/generic_test.pl' or die $@;

@@ -1,4 +1,4 @@
-package IPC::Manager::Protocol::DBI::PostgreSQL;
+package IPC::Manager::Client::PostgreSQL;
 use strict;
 use warnings;
 
@@ -9,21 +9,19 @@ use IPC::Manager::Util qw/pid_is_running/;
 use DBI;
 use DBD::Pg;
 
-use parent 'IPC::Manager::Protocol::DBI';
+use parent 'IPC::Manager::Base::DBI';
 use Object::HashBase qw{
     +QDB
 };
 
 sub escape { '"' }
 
-sub ready { 1 }
-
 sub dsn { $_[0]->{+INFO} }
 
 sub table_sql {
     return (
         <<"        EOT",
-            CREATE TABLE IF NOT EXISTS ipcm_clients(
+            CREATE TABLE IF NOT EXISTS ipcm_peers(
                 "id"        VARCHAR(36)     NOT NULL PRIMARY KEY,
                 "pid"       INTEGER         NOT NULL
             );
@@ -31,7 +29,7 @@ sub table_sql {
         <<"        EOT",
             CREATE TABLE IF NOT EXISTS ipcm_messages(
                 "id"        UUID            NOT NULL PRIMARY KEY,
-                "to"        VARCHAR(36)     NOT NULL REFERENCES ipcm_clients(id) ON DELETE CASCADE,
+                "to"        VARCHAR(36)     NOT NULL REFERENCES ipcm_peers(id) ON DELETE CASCADE,
                 "from"      VARCHAR(36)     NOT NULL,
                 "stamp"     NUMERIC         NOT NULL,
                 "content"   BYTEA           NOT NULL,
@@ -43,7 +41,7 @@ sub table_sql {
 
 sub default_attrs { +{ AutoCommit => 1 } }
 
-sub listen {
+sub vivify_info {
     my $class = shift;
     my (%params) = @_;
 
@@ -56,14 +54,20 @@ sub listen {
         $params{+INFO} = $qdb->connect_string;
         $params{+USER} = $qdb->username;
         $params{+PASS} = $qdb->password;
+
+        $dsn = $params{+INFO};
     }
 
-    $class->new(%params, ID() => 'manager', IS_MANAGER() => 1, MANAGER_PID() => $$);
+    $class->init_db(%params, dsn => $dsn);
+
+    return ($dsn, $params{+QDB});
 }
 
-sub manager_cleanup_hook {
+sub unspawn {
     my $self = shift;
-    delete $self->{+QDB};
+    my ($info, $stash) = @_;
+
+    undef($stash);
 }
 
 1;

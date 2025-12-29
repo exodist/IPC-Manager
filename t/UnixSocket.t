@@ -3,7 +3,7 @@ use warnings;
 
 {
     no warnings 'once';
-    $main::PROTOCOL = 'DBI::SQLite';
+    $main::PROTOCOL = 'UnixSocket';
 }
 
 do './t/generic_test.pl' or die $@;

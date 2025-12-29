@@ -1,4 +1,4 @@
-package IPC::Manager::Protocol::DBI::SQLite;
+package IPC::Manager::Client::SQLite;
 use strict;
 use warnings;
 
@@ -9,18 +9,17 @@ use IPC::Manager::Util qw/pid_is_running/;
 use DBI;
 use DBD::SQLite;
 
-use parent 'IPC::Manager::Protocol::DBI';
+use parent 'IPC::Manager::Base::DBI';
 use Object::HashBase;
 
-sub ready { -f $_[0]->{+INFO} }
-sub dsn { "dbi:SQLite:dbname=$_[0]->{+INFO}" }
+sub dsn { "dbi:SQLite:dbname=" . (@_ > 1 ? $_[1] : $_[0]->{+INFO}) }
 
 sub escape { '`' }
 
 sub table_sql {
     return (
         <<"        EOT",
-            CREATE TABLE IF NOT EXISTS ipcm_clients(
+            CREATE TABLE IF NOT EXISTS ipcm_peers(
                 `id`        CHAR(36)        NOT NULL PRIMARY KEY,
                 `pid`       INTEGER         NOT NULL
             );
@@ -28,7 +27,7 @@ sub table_sql {
         <<"        EOT",
             CREATE TABLE IF NOT EXISTS ipcm_messages(
                 `id`        UUID            NOT NULL,
-                `to`        CHAR(36)        NOT NULL REFERENCES ipcm_clients(id) ON DELETE CASCADE,
+                `to`        CHAR(36)        NOT NULL REFERENCES ipcm_peers(id) ON DELETE CASCADE,
                 `from`      CHAR(36)        NOT NULL,
                 `stamp`     BIGINT          NOT NULL,
                 `content`   BLOB            NOT NULL,
@@ -39,23 +38,28 @@ sub table_sql {
     );
 }
 
-sub listen {
+sub vivify_info {
     my $class = shift;
     my (%params) = @_;
 
-    my $dbfile = $params{info};
+    my $dbfile = delete $params{info};
     unless ($dbfile) {
-        my $template = $params{template} // "PerlIPCManager-$$-XXXXXX";
+        my $template = delete $params{template} // "PerlIPCManager-$$-XXXXXX";
         my ($fh, $file) = tempfile($template, TMPDIR => 1, CLEANUP => 0, SUFFIX => '.sqlite', EXLOCK => 0);
         $dbfile = $file;
     }
 
-    $class->new(%params, INFO() => $dbfile, ID() => 'manager', IS_MANAGER() => 1, MANAGER_PID() => $$);
+    $params{dsn} //= $class->dsn($dbfile);
+
+    $class->init_db(%params);
+
+    return "$dbfile";
 }
 
-sub manager_cleanup_hook {
-    my $self = shift;
-    unlink($self->{+INFO});
+sub unspawn {
+    my $class = shift;
+    my ($info) = @_;
+    unlink($info);
 }
 
 1;

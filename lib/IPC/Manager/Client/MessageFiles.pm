@@ -1,11 +1,11 @@
-package IPC::Manager::Protocol::FS::MessageFiles;
+package IPC::Manager::Client::MessageFiles;
 use strict;
 use warnings;
 
 use Carp qw/croak confess/;
 use File::Spec;
 
-use parent 'IPC::Manager::Protocol::FS';
+use parent 'IPC::Manager::Base::FS';
 use Object::HashBase qw{
     +dir_handle
 };
@@ -13,14 +13,6 @@ use Object::HashBase qw{
 sub check_path { -d $_[1] }
 sub make_path  { mkdir($_[1]) or die "Could not make dir '$_[1]': $!" }
 sub path_type  { 'subdir' }
-
-sub client_pid_file {
-    my $self = shift;
-    my ($client_id) = @_;
-
-    my $dir = File::Spec->catdir($self->{+INFO}, $client_id);
-    return File::Spec->catfile($dir, 'PID');
-}
 
 sub pre_disconnect_hook {
     my $self = shift;
@@ -87,11 +79,11 @@ sub get_messages {
 
 sub _write_message_file {
     my $self = shift;
-    my ($msg, $client) = @_;
+    my ($msg, $peer) = @_;
 
-    $client //= $msg->to or croak "Message has no client";
+    $peer //= $msg->to or croak "Message has no peer";
 
-    my $msg_dir = $self->client_exists($client) or croak "Client does not exist";
+    my $msg_dir = $self->peer_exists($peer) or croak "Client does not exist";
     my $msg_file = File::Spec->catfile($msg_dir, $msg->id);
 
     my $pend = "$msg_file.pend";
@@ -110,18 +102,9 @@ sub _write_message_file {
     return $ready;
 }
 
-sub broadcast {
-    my $self = shift;
-    my ($msg) = @_;
-
-    $self->pid_check;
-
-    $self->_write_message_file($msg, $_) for $self->clients;
-}
-
 sub send_message {
     my $self = shift;
-    my ($msg) = @_;
+    my $msg = $self->build_message(@_);
     $self->pid_check;
     $self->_write_message_file($msg);
 }

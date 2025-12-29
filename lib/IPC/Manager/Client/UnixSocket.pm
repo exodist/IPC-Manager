@@ -1,4 +1,4 @@
-package IPC::Manager::Protocol::FS::UnixSocket;
+package IPC::Manager::Client::UnixSocket;
 use strict;
 use warnings;
 
@@ -8,7 +8,7 @@ use POSIX qw/mkfifo/;
 use IO::Socket::UNIX qw/SOCK_DGRAM/;
 use IO::Select;
 
-use parent 'IPC::Manager::Protocol::FS';
+use parent 'IPC::Manager::Base::FS';
 use Object::HashBase qw{
     +buffer
     +socket
@@ -110,19 +110,12 @@ sub get_messages {
 
 sub send_message {
     my $self = shift;
-    my ($msg) = @_;
+    my $msg = $self->build_message(@_);
 
-    $self->_send_message($msg, $msg->to);
-}
-
-sub _send_message {
-    my $self = shift;
-    my ($msg, $client_id) = @_;
-
-    $client_id //= $msg->client_id or croak "No client specified";
+    my $peer_id = $msg->to or croak "No peer specified";
 
     $self->pid_check;
-    my $sock = $self->client_exists($client_id) or die "'$client_id' is not a valid message recipient";
+    my $sock = $self->peer_exists($peer_id) or die "'$peer_id' is not a valid message recipient";
 
     my $s = IO::Socket::UNIX->new(
         Type => SOCK_DGRAM,
@@ -130,13 +123,6 @@ sub _send_message {
     ) or die "Cannot connect to socket: $!";
 
     $s->send($self->{+SERIALIZER}->serialize($msg)) or die "Cannot send message: $!";
-}
-
-sub broadcast {
-    my $self = shift;
-    my ($msg) = @_;
-
-    $self->_send_message($msg, $_) for $self->clients;
 }
 
 1;

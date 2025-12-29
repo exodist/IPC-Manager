@@ -3,7 +3,7 @@ use warnings;
 
 {
     no warnings 'once';
-    $main::PROTOCOL = 'FS::AtomicPipe';
+    $main::PROTOCOL = 'AtomicPipe';
 }
 
 do './t/generic_test.pl' or die $@;

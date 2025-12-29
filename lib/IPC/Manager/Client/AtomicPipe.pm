@@ -1,4 +1,4 @@
-package IPC::Manager::Protocol::FS::AtomicPipe;
+package IPC::Manager::Client::AtomicPipe;
 use strict;
 use warnings;
 
@@ -7,7 +7,7 @@ use Atomic::Pipe;
 use Carp qw/croak/;
 use POSIX qw/mkfifo/;
 
-use parent 'IPC::Manager::Protocol::FS';
+use parent 'IPC::Manager::Base::FS';
 use Object::HashBase qw{
     permissions
     +pipe
@@ -116,29 +116,15 @@ sub get_messages {
 
 sub send_message {
     my $self = shift;
-    my ($msg) = @_;
+    my $msg = $self->build_message(@_);
 
-    $self->_send_message($msg, $msg->to);
-}
-
-sub _send_message {
-    my $self = shift;
-    my ($msg, $client_id) = @_;
-
-    $client_id //= $msg->client_id or croak "No client specified";
+    my $peer_id = $msg->to or croak "No peer specified";
 
     $self->pid_check;
-    my $fifo = $self->client_exists($client_id) or die "'$client_id' is not a valid message recipient";
+    my $fifo = $self->peer_exists($peer_id) or die "'$peer_id' is not a valid message recipient";
 
     my $p = Atomic::Pipe->write_fifo($fifo);
     $p->write_message($self->{+SERIALIZER}->serialize($msg));
-}
-
-sub broadcast {
-    my $self = shift;
-    my ($msg) = @_;
-
-    $self->_send_message($msg, $_) for $self->clients;
 }
 
 1;

@@ -1,4 +1,4 @@
-package IPC::Manager::Protocol::DBI::MariaDB;
+package IPC::Manager::Client::MySQL;
 use strict;
 use warnings;
 
@@ -8,12 +8,10 @@ use IPC::Manager::Util qw/pid_is_running/;
 
 use DBI;
 
-use parent 'IPC::Manager::Protocol::DBI';
+use parent 'IPC::Manager::Base::DBI';
 use Object::HashBase qw{
     +QDB
 };
-
-sub ready { 1 }
 
 sub dsn { $_[0]->{+INFO} }
 
@@ -24,15 +22,15 @@ sub default_attrs { +{ AutoCommit => 1 } }
 sub table_sql {
     return (
         <<"        EOT",
-            CREATE TABLE IF NOT EXISTS ipcm_clients(
+            CREATE TABLE IF NOT EXISTS ipcm_peers(
                 `id`        VARCHAR(36)     NOT NULL PRIMARY KEY,
                 `pid`       INTEGER         NOT NULL
             );
         EOT
         <<"        EOT",
             CREATE TABLE IF NOT EXISTS ipcm_messages(
-                `id`        UUID            NOT NULL PRIMARY KEY,
-                `to`        VARCHAR(36)     NOT NULL REFERENCES ipcm_clients(id) ON DELETE CASCADE,
+                `id`        VARCHAR(36)     NOT NULL PRIMARY KEY,
+                `to`        VARCHAR(36)     NOT NULL REFERENCES ipcm_peers(id) ON DELETE CASCADE,
                 `from`      VARCHAR(36)     NOT NULL,
                 `stamp`     DOUBLE          NOT NULL,
                 `content`   BLOB            NOT NULL,
@@ -42,7 +40,7 @@ sub table_sql {
     );
 }
 
-sub listen {
+sub vivify_info {
     my $class = shift;
     my (%params) = @_;
 
@@ -50,19 +48,25 @@ sub listen {
 
     unless ($dsn) {
         require DBIx::QuickDB;
-        my $qdb = DBIx::QuickDB->build_db(m_db => {driver => 'MariaDB'});
+        my $qdb = DBIx::QuickDB->build_db(m_db => {driver => 'MySQL'});
         $params{+QDB}  = $qdb;
         $params{+INFO} = $qdb->connect_string;
         $params{+USER} = $qdb->username;
         $params{+PASS} = $qdb->password;
+
+        $dsn = $params{+INFO};
     }
 
-    $class->new(%params, ID() => 'manager', IS_MANAGER() => 1, MANAGER_PID() => $$);
+    $class->init_db(%params, dsn => $dsn);
+
+    return ($dsn, $params{+QDB});
 }
 
-sub manager_cleanup_hook {
+sub unspawn {
     my $self = shift;
-    delete $self->{+QDB};
+    my ($info, $stash) = @_;
+
+    undef($stash);
 }
 
 1;

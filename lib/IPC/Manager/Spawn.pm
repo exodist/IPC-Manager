@@ -2,6 +2,8 @@ package IPC::Manager::Spawn;
 use strict;
 use warnings;
 
+our $VERSION = '0.000001';
+
 use Carp qw/croak/;
 use IPC::Manager::Serializer::JSON();
 

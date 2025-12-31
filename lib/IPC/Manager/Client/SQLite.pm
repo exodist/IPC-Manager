@@ -2,6 +2,8 @@ package IPC::Manager::Client::SQLite;
 use strict;
 use warnings;
 
+our $VERSION = '0.000001';
+
 use Carp qw/croak/;
 use File::Temp qw/tempfile/;
 use IPC::Manager::Util qw/pid_is_running/;

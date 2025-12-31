@@ -2,6 +2,8 @@ package IPC::Manager::Client::AtomicPipe;
 use strict;
 use warnings;
 
+our $VERSION = '0.000001';
+
 use File::Spec;
 use Atomic::Pipe;
 use Carp qw/croak/;

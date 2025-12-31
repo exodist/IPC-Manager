@@ -2,6 +2,8 @@ package IPC::Manager::Client;
 use strict;
 use warnings;
 
+our $VERSION = '0.000001';
+
 use Carp qw/croak/;
 use Scalar::Util qw/blessed weaken/;
 

@@ -2,6 +2,8 @@ package IPC::Manager::Util;
 use strict;
 use warnings;
 
+our $VERSION = '0.000001';
+
 use Carp qw/confess/;
 use Errno qw/ESRCH/;
 use Importer Importer => 'import';

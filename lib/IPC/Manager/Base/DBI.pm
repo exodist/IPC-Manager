@@ -2,6 +2,8 @@ package IPC::Manager::Base::DBI;
 use strict;
 use warnings;
 
+our $VERSION = '0.000001';
+
 use Carp qw/croak/;
 use Scalar::Util qw/blessed/;
 use File::Temp qw/tempfile/;

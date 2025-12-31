@@ -2,6 +2,8 @@ package IPC::Manager::Base::FS;
 use strict;
 use warnings;
 
+our $VERSION = '0.000001';
+
 use File::Spec;
 
 use Carp qw/croak/;

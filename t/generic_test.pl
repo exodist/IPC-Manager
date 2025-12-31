@@ -1,9 +1,4 @@
 use Test2::V1 -ipP;
-use Test2::IPC;
-use Time::HiRes qw/sleep/;
-use Carp::Always;
-use Data::Dumper;
-use POSIX;
 
 use IPC::Manager::Serializer::JSON;
 

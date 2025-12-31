@@ -7,7 +7,6 @@ use File::Temp qw/tempdir/;
 use IPC::Manager::Util qw/pid_is_running/;
 
 use DBI;
-use DBD::Pg;
 
 use parent 'IPC::Manager::Base::DBI';
 use Object::HashBase qw{

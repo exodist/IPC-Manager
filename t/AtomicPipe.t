@@ -1,6 +1,8 @@
 use strict;
 use warnings;
 
+use Test2::Require::Module 'Atomic::Pipe';
+
 {
     no warnings 'once';
     $main::PROTOCOL = 'AtomicPipe';

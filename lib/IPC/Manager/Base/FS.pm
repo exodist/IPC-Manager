@@ -28,6 +28,47 @@ sub path_type      { croak "Not Implemented" }
 
 sub have_resume_file { -e $_[0]->resume_file }
 
+sub all_stats {
+    my $self = shift;
+
+    my $out = {};
+
+    opendir(my $dh, $self->{+INFO}) or die "Could not open dir: $!";
+    for my $file (readdir($dh)) {
+        next unless $file =~ m/^(.+)\.stats$/;
+        my $peer = $1;
+        open(my $fh, '<', File::Spec->catfile($self->{+INFO}, $file)) or die "Could not open stats file: $!";
+        $out->{$peer} = do { local $/; $self->{+SERIALIZER}->deserialize(<$fh>) };
+        close($fh);
+    }
+
+    close($dh);
+
+    return $out;
+}
+
+sub stats_file {
+    my $self = shift;
+    return File::Spec->catfile($self->{+INFO}, "$self->{+ID}.stats");
+}
+
+sub write_stats {
+    my $self = shift;
+
+    open(my $fh, '>', $self->stats_file) or die "Could not open stats file: $!";
+    print $fh $self->{+SERIALIZER}->serialize($self->{+STATS});
+    close($fh);
+}
+
+sub read_stats {
+    my $self = shift;
+
+    open(my $fh, '<', $self->stats_file) or die "Could not open stats file: $!";
+    my $stats = do { local $/; <$fh> };
+    close($fh);
+    $self->{+SERIALIZER}->deserialize($stats);
+}
+
 sub pidfile {
     my $self = shift;
     return $self->{+PIDFILE} //= $self->peer_pid_file($self->{+ID});
@@ -113,7 +154,7 @@ sub read_resume_file {
 
     open(my $fh, '<', $rf) or die "Could not open resume file: $!";
     while (my $line = <$fh>) {
-        push @out => $line;
+        push @out => IPC::Manager::Message->new($self->{+SERIALIZER}->deserialize($line));
     }
     close($fh);
 
@@ -124,6 +165,7 @@ sub read_resume_file {
 
 sub post_disconnect_hook {
     my $self = shift;
+    $self->SUPER::post_disconnect_hook;
     remove_tree($self->path, {keep_root => 0, safe => 1});
 }
 

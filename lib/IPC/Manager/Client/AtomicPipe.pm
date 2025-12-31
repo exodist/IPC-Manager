@@ -96,6 +96,15 @@ sub ready_messages {
     return 0;
 }
 
+sub _process_msg {
+    my $self = shift;
+    my ($in) = @_;
+
+    my $msg = IPC::Manager::Message->new($self->{+SERIALIZER}->deserialize($in));
+    $self->{+STATS}->{read}->{$msg->{from}}++;
+    return $msg;
+}
+
 sub get_messages {
     my $self = shift;
 
@@ -104,14 +113,16 @@ sub get_messages {
     my @out;
 
     push @out => $self->read_resume_file;
-    push @out => @{$self->{+BUFFER}};
+
+    push @out => map { $self->_process_msg($_) } @{$self->{+BUFFER}};
+
     while (my $msg = $p->read_message) {
-        push @out => $msg;
+        push @out => $self->_process_msg($msg);
     }
 
     @{$self->{+BUFFER}} = ();
 
-    return sort { $a->stamp <=> $b->stamp } map { IPC::Manager::Message->new($self->{+SERIALIZER}->deserialize($_)) } @out;
+    return sort { $a->stamp <=> $b->stamp } @out;
 }
 
 sub send_message {
@@ -125,6 +136,8 @@ sub send_message {
 
     my $p = Atomic::Pipe->write_fifo($fifo);
     $p->write_message($self->{+SERIALIZER}->serialize($msg));
+
+    $self->{+STATS}->{sent}->{$msg->{to}}++;
 }
 
 1;

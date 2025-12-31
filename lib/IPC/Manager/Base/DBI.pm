@@ -89,9 +89,47 @@ sub init {
     else {
         my $dbh = $self->dbh;
         my $e   = $self->escape;
-        my $sth = $dbh->prepare("INSERT INTO ipcm_peers(${e}id${e}, ${e}pid${e}) VALUES (?, ?)") or die $dbh->errstr;
+        my $sth = $dbh->prepare("INSERT INTO ipcm_peers(${e}id${e}, ${e}pid${e}, ${e}active${e}) VALUES (?, ?, TRUE)") or die $dbh->errstr;
         $sth->execute($id, $self->{+PID}) or die $dbh->errstr;
     }
+}
+
+sub all_stats {
+    my $self = shift;
+
+    my $out = {};
+
+    my $dbh = $self->dbh;
+    my $e   = $self->escape;
+    my $sth = $dbh->prepare("SELECT ${e}id${e}, ${e}stats${e} FROM ipcm_peers") or die $dbh->errstr;
+    $sth->execute() or die $dbh->errstr;
+
+    while (my $row = $sth->fetchrow_arrayref) {
+        $out->{$row->[0]} = $self->{+SERIALIZER}->deserialize($row->[1]);
+    }
+
+    return $out;
+}
+
+sub write_stats {
+    my $self = shift;
+
+    my $dbh = $self->dbh;
+    my $e   = $self->escape;
+    my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}stats${e} = ? WHERE ${e}id${e} = ?") or die $dbh->errstr;
+    $sth->execute($self->{+SERIALIZER}->serialize($self->{+STATS}), $self->{+ID}) or die $dbh->errstr;
+}
+
+sub read_stats {
+    my $self = shift;
+
+    my $dbh = $self->dbh;
+    my $e   = $self->escape;
+    my $sth = $dbh->prepare("SELECT ${e}stats${e} FROM ipcm_peers WHERE ${e}id${e} = ?") or die $dbh->errstr;
+    $sth->execute($self->{+ID}) or die $dbh->errstr;
+
+    my $row = $sth->fetchrow_arrayref or return undef;
+    return $self->{+SERIALIZER}->deserialize($row->[0]);
 }
 
 sub peers {
@@ -99,8 +137,8 @@ sub peers {
 
     my $dbh = $self->dbh;
     my $e   = $self->escape;
-    my $sth = $dbh->prepare("SELECT ${e}id${e} FROM ipcm_peers ORDER BY ${e}id${e} ASC") or die $dbh->errstr;
-    $sth->execute();
+    my $sth = $dbh->prepare("SELECT ${e}id${e} FROM ipcm_peers WHERE ${e}id${e} != ? ORDER BY ${e}id${e} ASC") or die $dbh->errstr;
+    $sth->execute($self->{+ID});
 
     return map { $_->[0] } @{$sth->fetchall_arrayref([0])};
 }
@@ -144,6 +182,8 @@ sub send_message {
         ($msg->{broadcast} ? 1 : 0),
         $self->{+SERIALIZER}->serialize($msg->{content}),
     ) or die $dbh->errstr;
+
+    $self->{+STATS}->{sent}->{$msg->{to}}++;
 }
 
 sub _get_message_ids {
@@ -173,11 +213,13 @@ sub get_messages {
 
     for my $row (@$rows) {
         $row->{content} = $self->{+SERIALIZER}->deserialize($row->{content});
+        $self->{+STATS}->{read}->{$row->{from}}++;
         push @out => IPC::Manager::Message->new($row);
     }
 
     $sth = $dbh->prepare("DELETE $where") or die $dbh->errstr;
     $sth->execute(@$ids)                  or die $dbh->errstr;
+
 
     return @out;
 }
@@ -191,7 +233,8 @@ sub pre_disconnect_hook {
     my $self = shift;
 
     my $dbh = $self->dbh;
-    my $sth = $dbh->prepare("DELETE FROM ipcm_peers WHERE id = ?") or die $dbh->errstr;
+    my $e   = $self->escape;
+    my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}pid${e} = NULL, active = FALSE WHERE ${e}id${e} = ?") or die $dbh->errstr;
     $sth->execute($self->{+ID}) or die $dbh->errstr;
 }
 

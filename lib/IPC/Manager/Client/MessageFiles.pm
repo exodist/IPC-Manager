@@ -65,16 +65,19 @@ sub get_messages {
     for my $msg (@$ready) {
         my $full = File::Spec->catfile($self->path, $msg);
         open(my $fh, '<', $full) or die "Could not open file '$full': $!";
-        local $/;
-        my $content = <$fh>;
+        my $content = do { local $/; <$fh> };
         close($full);
         unlink($full) or die "Could not unlink file '$full': $!";
-        push @out => $content;
+
+        my $msg = IPC::Manager::Message->new($self->{+SERIALIZER}->deserialize($content));
+        push @out => $msg;
+
+        $self->{+STATS}->{read}->{$msg->{from}}++;
     }
 
     push @out => $self->read_resume_file;
 
-    return sort { $a->stamp <=> $b->stamp } map { IPC::Manager::Message->new($self->{+SERIALIZER}->deserialize($_)) } @out;
+    return sort { $a->stamp <=> $b->stamp } @out;
 }
 
 sub _write_message_file {
@@ -99,6 +102,7 @@ sub _write_message_file {
 
     rename($pend, $ready) or die "Could not rename file: $!";
 
+    $self->{+STATS}->{sent}->{$msg->{to}}++;
     return $ready;
 }
 

@@ -18,7 +18,7 @@ use Object::HashBase qw{
 sub check_path { -S $_[1] }
 sub path_type  { 'UNIX Socket' }
 
-sub suspend { croak "suspend is not supported" }
+sub suspend { croak "suspend is not supported by the UnixSocket driver" }
 
 sub make_path {
     my $self = shift;
@@ -100,12 +100,14 @@ sub get_messages {
 
     my $s = $self->{+SOCKET};
     while (my $msg = <$s>) {
+        $msg = IPC::Manager::Message->new($self->{+SERIALIZER}->deserialize($msg));
         push @out => $msg;
+        $self->{+STATS}->{read}->{$msg->{from}}++;
     }
 
     @{$self->{+BUFFER}} = ();
 
-    return sort { $a->stamp <=> $b->stamp } map { IPC::Manager::Message->new($self->{+SERIALIZER}->deserialize($_)) } @out;
+    return sort { $a->stamp <=> $b->stamp } @out;
 }
 
 sub send_message {
@@ -122,7 +124,9 @@ sub send_message {
         Peer => $sock,
     ) or die "Cannot connect to socket: $!";
 
-    $s->send($self->{+SERIALIZER}->serialize($msg)) or die "Cannot send message: $!";
+    $s->send($self->{+SERIALIZER}->serialize($msg) . "\n") or die "Cannot send message: $!";
+
+    $self->{+STATS}->{sent}->{$msg->{to}}++;
 }
 
 1;

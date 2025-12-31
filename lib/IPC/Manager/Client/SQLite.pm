@@ -21,18 +21,19 @@ sub table_sql {
         <<"        EOT",
             CREATE TABLE IF NOT EXISTS ipcm_peers(
                 `id`        CHAR(36)        NOT NULL PRIMARY KEY,
-                `pid`       INTEGER         NOT NULL
+                `pid`       INTEGER         DEFAULT NULL,
+                `active`    BOOL            NOT NULL DEFAULT TRUE,
+                `stats`     BLOB            DEFAULT NULL
             );
         EOT
         <<"        EOT",
             CREATE TABLE IF NOT EXISTS ipcm_messages(
-                `id`        UUID            NOT NULL,
+                `id`        UUID            NOT NULL PRIMARY KEY,
                 `to`        CHAR(36)        NOT NULL REFERENCES ipcm_peers(id) ON DELETE CASCADE,
-                `from`      CHAR(36)        NOT NULL,
+                `from`      CHAR(36)        NOT NULL REFERENCES ipcm_peers(id) ON DELETE CASCADE,
                 `stamp`     BIGINT          NOT NULL,
                 `content`   BLOB            NOT NULL,
-                `broadcast` BOOL            NOT NULL DEFAULT FALSE,
-                PRIMARY KEY(`id`, `to`)
+                `broadcast` BOOL            NOT NULL DEFAULT FALSE
             );
         EOT
     );

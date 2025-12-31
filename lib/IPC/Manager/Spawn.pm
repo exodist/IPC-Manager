@@ -8,12 +8,12 @@ use IPC::Manager::Serializer::JSON();
 use overload(
     fallback => 1,
 
-    '""' => sub { $_[0]->connect_string },
+    '""' => sub { $_[0]->info },
 );
 
 use Object::HashBase qw{
     <protocol
-    <info
+    <route
     <serializer
     <guard
     <stash
@@ -24,23 +24,23 @@ use Object::HashBase qw{
 sub init {
     my $self = shift;
 
-    $self->{+PID} //= $$;
+    $self->{+PID}   //= $$;
     $self->{+GUARD} //= 1;
 
-    croak "'protocol' is a required attribute" unless $self->{+PROTOCOL};
-    croak "'info' is a required attribute"     unless $self->{+INFO};
+    croak "'protocol' is a required attribute"   unless $self->{+PROTOCOL};
+    croak "'route' is a required attribute"      unless $self->{+ROUTE};
     croak "'serializer' is a required attribute" unless $self->{+SERIALIZER};
 }
 
-sub connect_string {
+sub info {
     my $self = shift;
-    return IPC::Manager::Serializer::JSON->serialize([@{$self}{PROTOCOL(), SERIALIZER(), INFO()}]);
+    return IPC::Manager::Serializer::JSON->serialize([@{$self}{PROTOCOL(), SERIALIZER(), ROUTE()}]);
 }
 
 sub connect {
     my $self = shift;
     my ($id) = @_;
-    return $self->{+PROTOCOL}->connect($id, $self->{+SERIALIZER}, $self->{+INFO});
+    return $self->{+PROTOCOL}->connect($id, $self->{+SERIALIZER}, $self->{+ROUTE});
 }
 
 sub terminate {
@@ -53,7 +53,7 @@ sub terminate {
     if ($self->{+SIGNAL()}) {
         for my $peer ($con->peers) {
             my $pid = eval { $con->peer_pid($peer) } or next;
-            next if $pid == $$;
+            next                           if $pid == $$;
             kill($self->{+SIGNAL()}, $pid) if $self->{+SIGNAL()};
         }
     }
@@ -132,7 +132,7 @@ sub DESTROY {
 
     $con = undef;
 
-    $self->{+PROTOCOL}->unspawn($self->{+INFO}, delete $self->{+STASH});
+    $self->{+PROTOCOL}->unspawn($self->{+ROUTE}, delete $self->{+STASH});
 }
 
 1;

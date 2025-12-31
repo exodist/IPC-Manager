@@ -15,10 +15,10 @@ my $guard = ipcm_spawn(protocol => $main::PROTOCOL);
 my $info = "$guard";
 
 isa_ok($guard, ['IPC::Manager::Spawn'], "Got a spawn object");
-is($info, $guard->connect_string, "Stringifies");
+is($info, $guard->info, "Stringifies");
 like(
     IPC::Manager::Serializer::JSON->deserialize($info),
-    ["IPC::Manager::Client::$main::PROTOCOL", "IPC::Manager::Serializer::JSON", $guard->info],
+    ["IPC::Manager::Client::$main::PROTOCOL", "IPC::Manager::Serializer::JSON", $guard->route],
     "Got a useful info string"
 );
 note("Info: $info");

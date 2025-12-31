@@ -4,6 +4,7 @@ use warnings;
 
 use Carp qw/croak/;
 
+use IPC::Manager::Spawn();
 use IPC::Manager::Serializer::JSON();
 
 use Importer Importer => 'import';
@@ -20,15 +21,15 @@ sub ipcm_reconnect { _connect(reconnect => @_) }
 sub _parse_cinfo {
     my $cinfo = shift;
 
-    my ($protocol, $info, $serializer);
+    my ($protocol, $route, $serializer);
 
     my $rtype = ref $cinfo;
     if ($rtype eq 'ARRAY') {
-        ($protocol, $serializer, $info) = @$cinfo;
+        ($protocol, $serializer, $route) = @$cinfo;
     }
-    elsif(!$rtype) {
-        ($protocol, $serializer, $info) = @{ IPC::Manager::Serializer::JSON->deserialize($cinfo) };
-        $protocol = _parse_protocol($protocol);
+    elsif (!$rtype) {
+        ($protocol, $serializer, $route) = @{IPC::Manager::Serializer::JSON->deserialize($cinfo)};
+        $protocol   = _parse_protocol($protocol);
         $serializer = _parse_serializer($serializer);
     }
     else {
@@ -38,7 +39,7 @@ sub _parse_cinfo {
     _require_mod($protocol);
     _require_mod($serializer);
 
-    return ($protocol, $serializer, $info);
+    return ($protocol, $serializer, $route);
 }
 
 sub _parse_protocol {
@@ -56,9 +57,9 @@ sub _parse_serializer {
 sub _connect {
     my ($meth, $id, $cinfo, %params) = @_;
 
-    my ($protocol, $serializer, $info) = _parse_cinfo($cinfo);
+    my ($protocol, $serializer, $route) = _parse_cinfo($cinfo);
 
-    return $protocol->$meth($id, $serializer, $info, %params);
+    return $protocol->$meth($id, $serializer, $route, %params);
 }
 
 sub _require_mod {
@@ -74,10 +75,10 @@ sub _require_mod {
 sub ipcm_spawn {
     my %params = @_;
 
-    my $guard     = delete $params{guard} // 1;
+    my $guard      = delete $params{guard}      // 1;
     my $serializer = delete $params{serializer} // 'JSON';
-    my $protocol  = delete $params{protocol};
-    my $protocols = delete $params{procotols} // [
+    my $protocol   = delete $params{protocol};
+    my $protocols  = delete $params{procotols} // [
         'PostgreSQL',
         'MariaDB',
         'MySQL',
@@ -106,12 +107,15 @@ sub ipcm_spawn {
     $serializer = _parse_serializer($serializer);
     _require_mod($serializer);
 
-    croak "No viable protocol found" unless $protocol;
+    my ($route, $stash) = $protocol->spawn(%params, serializer => $serializer);
 
-    $params{protocol}   = $protocol;
-    $params{serializer} = $serializer;
-
-    return $protocol->spawn(%params, guard => $guard);
+    return IPC::Manager::Spawn->new(
+        protocol   => $protocol,
+        serializer => $serializer,
+        route      => $route,
+        stash      => $stash,
+        guard      => $guard,
+    );
 }
 
 1;

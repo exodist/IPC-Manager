@@ -12,7 +12,7 @@ use IPC::Manager::Message;
 use Object::HashBase qw{
     <id
     <pid
-    <info
+    <route
     <disconnected
     <serializer
     +reconnect
@@ -47,37 +47,22 @@ sub get_messages { croak "Not Implemented" }
 sub peer_exists  { croak "Not Implemented" }
 sub peer_pid     { croak "Not Implemented" }
 sub peers        { croak "Not Implemented" }
-sub send_message { croak "Not Implemented" }
-sub vivify_info  { croak "Not Implemented" }
-sub write_stats  { croak "Not Implemented" }
 sub read_stats   { croak "Not Implemented" }
-
-sub spawn {
-    my $class  = shift;
-    my %params = @_;
-
-    my ($info, $stash) = $class->vivify_info(%params);
-
-    require IPC::Manager::Spawn;
-    return IPC::Manager::Spawn->new(
-        %params,
-        protocol => $class,
-        info     => $info,
-        stash    => $stash,
-    );
-}
+sub send_message { croak "Not Implemented" }
+sub spawn        { croak "Not Implemented" }
+sub write_stats  { croak "Not Implemented" }
 
 sub connect {
     my $class = shift;
-    my ($id, $serializer, $info, %params) = @_;
-    return $class->new(%params, SERIALIZER() => $serializer, INFO() => $info, ID() => $id);
+    my ($id, $serializer, $route, %params) = @_;
+    return $class->new(%params, SERIALIZER() => $serializer, ROUTE() => $route, ID() => $id);
 }
 
 sub init {
     my $self = shift;
 
     if (!$PID || $PID != $$) {
-        $PID = $$;
+        $PID   = $$;
         @LOCAL = ();
     }
 
@@ -85,7 +70,7 @@ sub init {
     weaken($LOCAL[-1]);
 
     croak "'serializer' is a required attribute" unless $self->{+SERIALIZER};
-    croak "'info' is a required attribute"       unless $self->{+INFO};
+    croak "'route' is a required attribute"      unless $self->{+ROUTE};
 
     my $id = $self->{+ID} // croak "'id' is a required attribute";
 
@@ -98,7 +83,7 @@ sub init {
 
 sub build_message {
     my $self = shift;
-    my $in = @_ % 2 ? shift(@_) : undef;
+    my $in   = @_ % 2 ? shift(@_) : undef;
     if (@_ == 2 && $_[1] ne 'content') {
         @_ = (to => $_[0], content => $_[1]);
     }
@@ -132,7 +117,7 @@ sub try_message {
             $ok = 1;
         }
         else {
-            $ok = 0;
+            $ok  = 0;
             $err = $@ // "unknown error";
         }
     }

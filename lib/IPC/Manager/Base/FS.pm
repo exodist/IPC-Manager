@@ -33,11 +33,11 @@ sub all_stats {
 
     my $out = {};
 
-    opendir(my $dh, $self->{+INFO}) or die "Could not open dir: $!";
+    opendir(my $dh, $self->{+ROUTE}) or die "Could not open dir: $!";
     for my $file (readdir($dh)) {
         next unless $file =~ m/^(.+)\.stats$/;
         my $peer = $1;
-        open(my $fh, '<', File::Spec->catfile($self->{+INFO}, $file)) or die "Could not open stats file: $!";
+        open(my $fh, '<', File::Spec->catfile($self->{+ROUTE}, $file)) or die "Could not open stats file: $!";
         $out->{$peer} = do { local $/; $self->{+SERIALIZER}->deserialize(<$fh>) };
         close($fh);
     }
@@ -49,7 +49,7 @@ sub all_stats {
 
 sub stats_file {
     my $self = shift;
-    return File::Spec->catfile($self->{+INFO}, "$self->{+ID}.stats");
+    return File::Spec->catfile($self->{+ROUTE}, "$self->{+ID}.stats");
 }
 
 sub write_stats {
@@ -76,19 +76,19 @@ sub pidfile {
 
 sub path {
     my $self = shift;
-    return $self->{+PATH} //= File::Spec->catfile($self->{+INFO}, $self->{+ID});
+    return $self->{+PATH} //= File::Spec->catfile($self->{+ROUTE}, $self->{+ID});
 }
 
 sub resume_file {
     my $self = shift;
-    return $self->{+RESUME_FILE} //= File::Spec->catfile($self->{+INFO}, $self->{+ID} . ".resume");
+    return $self->{+RESUME_FILE} //= File::Spec->catfile($self->{+ROUTE}, $self->{+ID} . ".resume");
 }
 
 sub peer_pid_file {
     my $self = shift;
     my ($peer_id) = @_;
 
-    return File::Spec->catfile($self->{+INFO}, $peer_id . ".pid");
+    return File::Spec->catfile($self->{+ROUTE}, $peer_id . ".pid");
 }
 
 sub init {
@@ -179,7 +179,7 @@ sub peers {
 
     my @out;
 
-    opendir(my $dh, $self->{+INFO}) or die "Could not open dir: $!";
+    opendir(my $dh, $self->{+ROUTE}) or die "Could not open dir: $!";
     for my $file (readdir($dh)) {
         next if $file eq $self->{+ID};
         next if $file =~ m/^(\.|_)/;
@@ -213,25 +213,25 @@ sub peer_exists {
 
     croak "'peer_id' is required" unless $peer_id;
 
-    my $path = File::Spec->catdir($self->{+INFO}, $peer_id);
+    my $path = File::Spec->catdir($self->{+ROUTE}, $peer_id);
     return $path if $self->check_path($path);
     return undef;
 }
 
-sub vivify_info {
+sub spawn {
     my $class = shift;
     my (%params) = @_;
 
     my $template = delete $params{template} // "PerlIPCManager-$$-XXXXXX";
-    my $dir = tempdir($template, TMPDIR => 1, CLEANUP => 0, %params);
+    my $dir      = tempdir($template, TMPDIR => 1, CLEANUP => 0, %params);
 
     return "$dir";
 }
 
 sub unspawn {
     my $class = shift;
-    my ($info) = @_;
-    remove_tree($info, {keep_root => 0, safe => 1});
+    my ($route) = @_;
+    remove_tree($route, {keep_root => 0, safe => 1});
 }
 
 1;

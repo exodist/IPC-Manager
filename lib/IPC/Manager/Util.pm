@@ -17,9 +17,9 @@ sub pid_is_running {
 
     local $!;
 
-    return 1 if kill(0, $pid); # Running and we have perms
-    return 0 if $! == ESRCH;   # Does not exist (not running)
-    return -1;                 # Running, but not ours
+    return 1 if kill(0, $pid);    # Running and we have perms
+    return 0 if $! == ESRCH;      # Does not exist (not running)
+    return -1;                    # Running, but not ours
 }
 
 1;

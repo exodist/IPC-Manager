@@ -12,7 +12,7 @@ use DBD::SQLite;
 use parent 'IPC::Manager::Base::DBI';
 use Object::HashBase;
 
-sub dsn { "dbi:SQLite:dbname=" . (@_ > 1 ? $_[1] : $_[0]->{+INFO}) }
+sub dsn { "dbi:SQLite:dbname=" . (@_ > 1 ? $_[1] : $_[0]->{+ROUTE}) }
 
 sub escape { '`' }
 
@@ -39,11 +39,11 @@ sub table_sql {
     );
 }
 
-sub vivify_info {
+sub spawn {
     my $class = shift;
     my (%params) = @_;
 
-    my $dbfile = delete $params{info};
+    my $dbfile = delete $params{route};
     unless ($dbfile) {
         my $template = delete $params{template} // "PerlIPCManager-$$-XXXXXX";
         my ($fh, $file) = tempfile($template, TMPDIR => 1, CLEANUP => 0, SUFFIX => '.sqlite', EXLOCK => 0);
@@ -59,8 +59,8 @@ sub vivify_info {
 
 sub unspawn {
     my $class = shift;
-    my ($info) = @_;
-    unlink($info);
+    my ($route) = @_;
+    unlink($route);
 }
 
 1;

@@ -8,8 +8,8 @@ BEGIN {
     local $@;
     my $class;
     $class //= eval { require Cpanel::JSON::XS; 'Cpanel::JSON::XS' };
-    $class //= eval { require JSON::XS; 'JSON::XS' };
-    $class //= eval { require JSON::PP; 'JSON::PP' };
+    $class //= eval { require JSON::XS;         'JSON::XS' };
+    $class //= eval { require JSON::PP;         'JSON::PP' };
 
     die "Could not find 'Cpanel::JSON::XS', 'JSON::XS', or 'JSON::PP'" unless $class;
 

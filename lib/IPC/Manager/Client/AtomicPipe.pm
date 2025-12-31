@@ -18,8 +18,8 @@ sub check_path { -p $_[1] }
 sub path_type  { 'FIFO' }
 
 sub make_path {
-    my $self = shift;
-    my $path = $self->path;
+    my $self  = shift;
+    my $path  = $self->path;
     my $perms = $self->{+PERMISSIONS} //= 0700;
     mkfifo($path, $perms) or die "Failed to make fifo '$path': $!";
     my $p = Atomic::Pipe->read_fifo($path);
@@ -127,7 +127,7 @@ sub get_messages {
 
 sub send_message {
     my $self = shift;
-    my $msg = $self->build_message(@_);
+    my $msg  = $self->build_message(@_);
 
     my $peer_id = $msg->to or croak "No peer specified";
 

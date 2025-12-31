@@ -37,14 +37,14 @@ sub is_terminate {
     return 0;
 }
 
-sub TO_JSON { +{ %{$_[0]} } }
+sub TO_JSON { +{%{$_[0]}} }
 
 sub clone {
-    my $self = shift;
+    my $self   = shift;
     my %params = @_;
-    my $copy = { %$self };
+    my $copy   = {%$self};
     delete $copy->{+ID};
-    $copy = { %$copy, %params };
+    $copy = {%$copy, %params};
     return blessed($self)->new($copy);
 }
 

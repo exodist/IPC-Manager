@@ -112,7 +112,7 @@ sub get_messages {
 
 sub send_message {
     my $self = shift;
-    my $msg = $self->build_message(@_);
+    my $msg  = $self->build_message(@_);
 
     my $peer_id = $msg->to or croak "No peer specified";
 

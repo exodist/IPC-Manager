@@ -4,7 +4,7 @@ use warnings;
 
 use Carp qw/croak/;
 
-sub serialize { croak "Not Implemented" }
+sub serialize   { croak "Not Implemented" }
 sub deserialize { croak "Not Implemented" }
 
 1;

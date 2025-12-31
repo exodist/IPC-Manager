@@ -16,7 +16,7 @@ use Object::HashBase qw{
 
 sub escape { '"' }
 
-sub dsn { $_[0]->{+INFO} }
+sub dsn { $_[0]->{+ROUTE} }
 
 sub table_sql {
     return (
@@ -43,21 +43,21 @@ sub table_sql {
 
 sub default_attrs { +{ AutoCommit => 1 } }
 
-sub vivify_info {
+sub spawn {
     my $class = shift;
     my (%params) = @_;
 
-    my $dsn = $params{info};
+    my $dsn = $params{route};
 
     unless ($dsn) {
         require DBIx::QuickDB;
         my $qdb = DBIx::QuickDB->build_db(pg_db => {driver => 'PostgreSQL'});
         $params{+QDB}  = $qdb;
-        $params{+INFO} = $qdb->connect_string;
+        $params{+ROUTE} = $qdb->connect_string;
         $params{+USER} = $qdb->username;
         $params{+PASS} = $qdb->password;
 
-        $dsn = $params{+INFO};
+        $dsn = $params{+ROUTE};
     }
 
     $class->init_db(%params, dsn => $dsn);
@@ -67,7 +67,7 @@ sub vivify_info {
 
 sub unspawn {
     my $self = shift;
-    my ($info, $stash) = @_;
+    my ($route, $stash) = @_;
 
     undef($stash);
 }

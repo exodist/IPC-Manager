@@ -17,7 +17,7 @@ sub path_type  { 'subdir' }
 sub pre_disconnect_hook {
     my $self = shift;
 
-    my $new_path = File::Spec->catfile($self->{+INFO}, "_" . $self->{+ID});
+    my $new_path = File::Spec->catfile($self->{+ROUTE}, "_" . $self->{+ID});
     rename($self->path, $new_path) or die "Cannot rename directory: $!";
     $self->{+PATH} = $new_path;
 }
@@ -86,10 +86,10 @@ sub _write_message_file {
 
     $peer //= $msg->to or croak "Message has no peer";
 
-    my $msg_dir = $self->peer_exists($peer) or croak "Client does not exist";
+    my $msg_dir  = $self->peer_exists($peer) or croak "Client does not exist";
     my $msg_file = File::Spec->catfile($msg_dir, $msg->id);
 
-    my $pend = "$msg_file.pend";
+    my $pend  = "$msg_file.pend";
     my $ready = "$msg_file.ready";
 
     confess "Message file '$msg_file' already exists" if -e $pend || -e $ready;
@@ -108,7 +108,7 @@ sub _write_message_file {
 
 sub send_message {
     my $self = shift;
-    my $msg = $self->build_message(@_);
+    my $msg  = $self->build_message(@_);
     $self->pid_check;
     $self->_write_message_file($msg);
 }

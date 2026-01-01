@@ -51,3 +51,110 @@ sub clone {
 }
 
 1;
+
+__END__
+
+=pod
+
+=encoding UTF-8
+
+=head1 NAME
+
+IPC::Manager::Message - Messages sent between clients.
+
+=head1 DESCRIPTION
+
+This encapsulates messages sent between clients.
+
+=head1 SYNOPSIS
+
+    use IPC::Manager::Message;
+
+    my $msg = IPC::Manager::Message->new(
+        from      => 'con1',                 # No default, required
+        to        => 'con2',                 # No default, required unless broadcast is true
+        broadcast => 0,                      # Default 0
+        stamp     => Time::HiRes::time(),    # Default to now
+        id        => gen_uuid(),             # Default: new uuid
+        content   => {hello => 'world'},     # No default, required
+    );
+
+Most of the time you will be using the send_message() interface to produce
+these:
+
+    $from_client->send_message($to_client => $content);
+
+=head1 METHODS
+
+=over 4
+
+=item $client_name = $msg->from
+
+Get the name of the 'from' client.
+
+=item $client_name = $msg->to
+
+Get the name of the 'to' client. May be undefined on broadcast messages.
+
+=item $bool = $msg->broadcast
+
+True if the message is/was intended for broadcast.
+
+=item $stamp = $msg->stamp
+
+Timestamp of the message.
+
+=item $string = $msg->id
+
+Message ID. If none was provided a new UUID is used.
+
+=item $content = $msg->content
+
+Message content. Should be a hashref or arrayref.
+
+=item $bool = $msg->is_terminate
+
+True if this is a termination message as sent when an L<IPC::Manager::Spawn> is
+cleaning up an instance.
+
+=item $content = $msg->TO_JSON
+
+Used to turn the message into a raw hashref for JSON serialization.
+
+=item $copy = $msg->clone(%overrides)
+
+Create a copy of the message with a new ID, and any overrides specified.
+
+=back
+
+=head1 SOURCE
+
+The source code repository for IPC::Manager can be found at
+L<https://https://github.com/exodist/IPC-Manager>.
+
+=head1 MAINTAINERS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 AUTHORS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright Chad Granum E<lt>exodist7@gmail.comE<gt>.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+See L<https://dev.perl.org/licenses/>
+
+=cut

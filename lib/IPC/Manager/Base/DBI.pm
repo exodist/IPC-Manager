@@ -7,7 +7,6 @@ our $VERSION = '0.000001';
 use Carp qw/croak/;
 use Scalar::Util qw/blessed/;
 use File::Temp qw/tempfile/;
-use IPC::Manager::Util qw/pid_is_running/;
 
 use DBI;
 
@@ -20,7 +19,6 @@ use Object::HashBase qw{
 };
 
 sub dsn       { croak "Not Implemented" }
-sub ready     { croak "Not Implemented" }
 sub table_sql { croak "Not Implemented" }
 
 sub escape { '' }
@@ -81,16 +79,21 @@ sub init {
 
     my $id = $self->{+ID};
 
-    if ($self->{+RECONNECT}) {
-        my $row = $self->_get_peer($self->{+ID}) or die "The '$id' peer does not exist";
+    my $row = $self->_get_peer($self->{+ID});
 
-        if (my $pid = $row->{pid}) {
-            croak "Looks like the connection is already running in pid $pid" if $pid && pid_is_running($pid);
-        }
+    croak "The '$id' peer does not exist" if $self->{+RECONNECT} && !$row;
+
+    croak "Looks like the connection is already running in pid $row->{pid}"
+        if $row && $row->{pid} && $self->pid_is_running($row->{pid});
+
+    my $dbh = $self->dbh;
+    my $e   = $self->escape;
+
+    if ($row) {
+        my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}active${e} = TRUE, ${e}pid${e} = ? WHERE ${e}id${e} = ?");
+        $sth->execute($self->{+PID}, $self->{+ID}) or die $dbh->errstr;
     }
     else {
-        my $dbh = $self->dbh;
-        my $e   = $self->escape;
         my $sth = $dbh->prepare("INSERT INTO ipcm_peers(${e}id${e}, ${e}pid${e}, ${e}active${e}) VALUES (?, ?, TRUE)") or die $dbh->errstr;
         $sth->execute($id, $self->{+PID}) or die $dbh->errstr;
     }
@@ -139,7 +142,7 @@ sub peers {
 
     my $dbh = $self->dbh;
     my $e   = $self->escape;
-    my $sth = $dbh->prepare("SELECT ${e}id${e} FROM ipcm_peers WHERE ${e}id${e} != ? ORDER BY ${e}id${e} ASC") or die $dbh->errstr;
+    my $sth = $dbh->prepare("SELECT ${e}id${e} FROM ipcm_peers WHERE ${e}id${e} != ? AND active = TRUE ORDER BY ${e}id${e} ASC") or die $dbh->errstr;
     $sth->execute($self->{+ID});
 
     return map { $_->[0] } @{$sth->fetchall_arrayref([0])};
@@ -150,7 +153,8 @@ sub peer_pid {
     my ($id) = @_;
 
     my $row = $self->_get_peer($id) or return undef;
-    return $row->{pid} // undef;
+    return $row->{pid} // undef if $row->{active};
+    return undef;
 }
 
 sub peer_exists {
@@ -251,3 +255,100 @@ sub pre_suspend_hook {
 
 1;
 
+__END__
+
+=pod
+
+=encoding UTF-8
+
+=head1 NAME
+
+IPC::Manager::Base::DBI - Base class for DBI based protocols
+
+=head1 DESCRIPTION
+
+This is the base class for DBI based message stores and protocols.
+
+=head1 METHODS
+
+See L<IPC::Manager::Client> for inherited methods
+
+=head2 DBI SPECIFIC
+
+=over 4
+
+=item $hashref = $con->attrs
+
+Get the attributes used for this database connection.
+
+=item $dbh = $con->dbh()
+
+=item $dbh = $class->dbh(dsn => $dsn, user => $user, pass => $password, attrs => {...})
+
+Get the database handle. Can be used on an instance, or on the class with
+parameters.
+
+=item $attrs = $con_or_class->default_attrs()
+
+Default attributes to be used for connections when none are specified. Returns
+undef unless overriden by a subclass.
+
+=item $dsn = $con->dsn
+
+Get the dsn used for the connection.
+
+=item $str = $con->escape
+
+Used to escape column names. Each protocol can specify a custom one, for
+example mysql and sqlite use '`', but postgresql uses '"'.
+
+=item $class->init_db(%params)
+
+Used during spawn to put the necessary tables into the database if they are not
+already present.
+
+=item $password = $con->pass
+
+Connection password.
+
+=item @sql = $class->table_sql
+
+Get the table schema in SQL format to apply to the database.
+
+=item $username = $con->user
+
+Connection username.
+
+=back
+
+=head1 SOURCE
+
+The source code repository for IPC::Manager can be found at
+L<https://https://github.com/exodist/IPC-Manager>.
+
+=head1 MAINTAINERS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 AUTHORS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright Chad Granum E<lt>exodist7@gmail.comE<gt>.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+See L<https://dev.perl.org/licenses/>
+
+=cut

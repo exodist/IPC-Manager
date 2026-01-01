@@ -58,6 +58,21 @@ like(
 like([$con1->get_messages], [], "No messages");
 like([$con2->get_messages], [], "No messages");
 
+$con1->send_message(con2 => "string message!");
+like(
+    [$con2->get_messages],
+    [{
+        id      => T(),
+        stamp   => T(),
+        from    => 'con1',
+        to      => 'con2',
+        content => "string message!",
+    }],
+    "Got message sent from con1 to con2"
+);
+
+
+
 my $con3 = ipcm_connect('con3' => $info);
 
 $con3->broadcast({mass => 'message'});
@@ -110,10 +125,10 @@ is(
     {
         'con1' => {
             'read'  => {'con2' => 1, 'con3' => 3},
-            'sent'  => {'con2' => 2},
+            'sent'  => {'con2' => 3},
         },
         'con2' => {
-            'read'  => {'con1' => 1, 'con3' => 3},
+            'read'  => {'con1' => 2, 'con3' => 3},
             'sent'  => {'con1' => 1},
         },
         'con3' => {

@@ -10,8 +10,6 @@ use Carp qw/croak/;
 use File::Temp qw/tempdir/;
 use File::Path qw/remove_tree/;
 
-use IPC::Manager::Util qw/pid_is_running/;
-
 use parent 'IPC::Manager::Client';
 use Object::HashBase qw{
     +path
@@ -108,7 +106,7 @@ sub init {
         my $pidfile = $self->pidfile;
         if (open(my $fh, '<', $pidfile)) {
             chomp(my $pid = <$fh>);
-            croak "Looks like the connection is already running in pid $pid" if $pid && pid_is_running($pid);
+            croak "Looks like the connection is already running in pid $pid" if $pid && $self->pid_is_running($pid);
             close($fh);
         }
     }
@@ -237,3 +235,107 @@ sub unspawn {
 }
 
 1;
+
+__END__
+
+=pod
+
+=encoding UTF-8
+
+=head1 NAME
+
+IPC::Manager::Base::FS - Base class for filesystem based protocols
+
+=head1 DESCRIPTION
+
+This is the base class for filesystem based message stores and protocols.
+
+=head1 METHODS
+
+See L<IPC::Manager::Client> for inherited methods
+
+=head2 FS SPECIFIC
+
+=over 4
+
+=item $bool = $con->check_path($path)
+
+Check if a path is a valid client path, what that means is protocol specific.
+
+=item $con->clear_pid
+
+Remove the pid from the pidfile, marking the client inactive.
+
+=item $bool = $con->have_resume_file
+
+Check if we have a resume file. A resume file is where re-queued messages go.
+
+=item $con->make_path($path)
+
+Create the path for the client. What this means is protocol specific.
+
+=item $path = $con->path
+
+Get the proper path for the client.
+
+=item $string = $con->path_type
+
+Returns a human readable name for what types of files/etc the paths should be.
+
+=item $file = $con->peer_pid_file($peer_name)
+
+Get the path to the pidfile for the peer of the given name.
+
+=item $file = $con->pidfile
+
+Get the pidfile for the connection.
+
+=item @messages = $con->read_resume_file
+
+Get any messages from the resume file, then delete the file.
+
+=item $file = $con->resume_file
+
+Get the resume file for the connection.
+
+=item $file = $con->stats_file
+
+Get the stats file for the connection.
+
+=item $con->write_pid
+
+Write the pidfile for the connection.
+
+=back
+
+=head1 SOURCE
+
+The source code repository for IPC::Manager can be found at
+L<https://https://github.com/exodist/IPC-Manager>.
+
+=head1 MAINTAINERS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 AUTHORS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright Chad Granum E<lt>exodist7@gmail.comE<gt>.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+See L<https://dev.perl.org/licenses/>
+
+=cut

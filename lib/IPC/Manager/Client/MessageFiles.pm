@@ -116,3 +116,67 @@ sub send_message {
 }
 
 1;
+
+__END__
+
+=pod
+
+=encoding UTF-8
+
+=head1 NAME
+
+IPC::Manager::Client::MessageFiles - Use files on disk as a message store.
+
+=head1 DESCRIPTION
+
+The message store is a directory. Each client has a subdirectory. Each message
+is a file added to the client subdirectories.
+
+=head1 SYNOPSIS
+
+    use IPC::Manager qw/ipcm_spawn ipcm_connect/;
+
+    my $spawn = ipcm_spawn(protocol => 'MessageFiles');
+
+    my $con1 = $spawn->connect('con1');
+    my $con2 = ipcm_connect(con2, $spawn->info);
+
+    $con1->send_message(con1 => {'hello' => 'con2'});
+
+    my @messages = $con2->get_messages;
+
+=head1 METHODS
+
+See L<IPC::Manager::Client>.
+
+=head1 SOURCE
+
+The source code repository for IPC::Manager can be found at
+L<https://https://github.com/exodist/IPC-Manager>.
+
+=head1 MAINTAINERS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 AUTHORS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright Chad Granum E<lt>exodist7@gmail.comE<gt>.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+See L<https://dev.perl.org/licenses/>
+
+=cut

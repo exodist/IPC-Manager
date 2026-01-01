@@ -200,15 +200,20 @@ C<ipcm_reconnect()> into your namespace.
 
 =item $ipcm = ipcm_spawn()
 
-=item $ipcm = ipcm_spawn(guard => 1, serializer => 'JSON', protocol => $PROTOCOL)
+=item $ipcm = ipcm_spawn(protocol => $PROTOCOL)
 
-=item $ipcm = ipcm_spawn(guard => 1, serializer => 'JSON', protocols => \@PROTOCOLS)
+=item $ipcm = ipcm_spawn(protocols => \@PROTOCOLS)
+
+=item $ipcm = ipcm_spawn(serializer => 'JSON', guard => 1, signal => $SIGNAL)
 
 This will create a new data store for IPC. By default it will be temporary and
 will be destroyed when the $ipcm object falls out of scope.
 
 You can set C<< guard => 0 >> to prevent the destruction of the datastore when
 the object falls out of scope.
+
+You can also set a signal, such as C<'INT'> or C<'TERM'> to have the signal
+sent to the PID for all clients when the instance is shut down.
 
 You can set the serializer with the C<< serializer => $CLASS >> option.
 'IPC::Manager::Serializer::' will be prefixed onto the class name unless it is
@@ -225,6 +230,8 @@ it will try protocols is subject to change at any time.
 If you want to narrow down to a specific set of protocols you may provide a
 list: C<< protocols => [ 'AtomicPipe', 'UnixSocket', 'PostgreSQL', ... ] >>.
 The first viable protocol will be used.
+
+The object returned is an instance of L<IPC::Manager::Spawn>.
 
 =item $con = ipcm_connect($name => $info)
 
@@ -320,6 +327,15 @@ L<IPC::Manager::Client::PostgreSQL>
 L<IPC::Manager::Client::SQLite>
 
 =back
+
+=head1 CLEANUP
+
+When using a temporary instance that cleans up after itself, the cleanup
+process will send terminations messages to all clients, then wait for them to
+disconnect. It will also tell you if there is a mismtach between sent and
+recieved messages.
+
+See L<IPC::Manager::Spawn> for more information.
 
 =head1 SOURCE
 

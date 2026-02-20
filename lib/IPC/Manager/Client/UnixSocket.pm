@@ -128,6 +128,9 @@ sub send_message {
 
     $s->send($self->{+SERIALIZER}->serialize($msg) . "\n") or die "Cannot send message: $!";
 
+    $s->flush // warn "Flush error: $!";
+    close($s) or warn "Could not close socket: $!";
+
     $self->{+STATS}->{sent}->{$msg->{to}}++;
 }
 

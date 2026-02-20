@@ -48,6 +48,7 @@ sub pid_check { croak "Client used from wrong PID" if $_[0]->{+PID} != $$; $_[0]
 
 sub have_pending_messages { 0 }
 sub have_ready_messages   { croak "Not Implemented" }
+sub handles_for_select    { croak "Not Implemented" }
 
 sub get_messages { croak "Not Implemented" }
 sub peer_exists  { croak "Not Implemented" }
@@ -70,7 +71,6 @@ sub pid_is_running {
     return 0 if $! == ESRCH;      # Does not exist (not running)
     return -1;                    # Running, but not ours
 }
-
 
 sub connect {
     my $class = shift;

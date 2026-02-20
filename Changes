@@ -1,5 +1,8 @@
 {{$NEXT}}
 
+    - Add IO::Select and handle capabilities where possible
+    - Possibly fix UnixSocket
+
 0.000002  2026-02-19 18:57:37-08:00 America/Los_Angeles
 
     - Attempt to add debugging for UnixSocket issues

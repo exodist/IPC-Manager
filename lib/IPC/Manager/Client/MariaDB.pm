@@ -14,6 +14,15 @@ use Object::HashBase qw{
     +QDB
 };
 
+sub viable {
+    my $driver = 'DBIx::QuickDB::Driver::MariaDB';
+    eval {
+        require DBIx::QuickDB;
+        my ($v) = DBIx::QuickDB->check_driver($driver, {});
+        return $v;
+    };
+}
+
 sub dsn { $_[0]->{+ROUTE} }
 
 sub escape { '`' }
@@ -26,7 +35,7 @@ sub table_sql {
             CREATE TABLE IF NOT EXISTS ipcm_peers(
                 `id`        VARCHAR(36)     NOT NULL PRIMARY KEY,
                 `pid`       INTEGER         DEFAULT NULL,
-                `active`    BOOL            NOT NULL DEFAULT TRUE,
+                `active`    DOUBLE          DEFAULT UNIX_TIMESTAMP(),
                 `stats`     BLOB            DEFAULT NULL
             );
         EOT

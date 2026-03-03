@@ -9,6 +9,15 @@ use File::Temp qw/tempfile/;
 
 use DBI;
 
+sub viable {
+    my $driver = 'DBIx::QuickDB::Driver::SQLite';
+    eval {
+        require DBIx::QuickDB;
+        my ($v) = DBIx::QuickDB->check_driver($driver, {});
+        return $v;
+    };
+}
+
 use parent 'IPC::Manager::Base::DBI';
 use Object::HashBase;
 
@@ -22,7 +31,7 @@ sub table_sql {
             CREATE TABLE IF NOT EXISTS ipcm_peers(
                 `id`        CHAR(36)        NOT NULL PRIMARY KEY,
                 `pid`       INTEGER         DEFAULT NULL,
-                `active`    BOOL            NOT NULL DEFAULT TRUE,
+                `active`    BIGINT          DEFAULT (strftime('%s', 'now')),
                 `stats`     BLOB            DEFAULT NULL
             );
         EOT

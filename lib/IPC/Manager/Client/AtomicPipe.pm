@@ -19,6 +19,7 @@ use Object::HashBase qw{
 sub check_path { -p $_[1] }
 sub path_type  { 'FIFO' }
 
+sub have_handles_for_select { 1 }
 sub handles_for_select { $_[0]->{+PIPE}->rh }
 
 sub make_path {

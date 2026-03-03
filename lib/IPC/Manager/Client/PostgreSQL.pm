@@ -24,7 +24,7 @@ sub table_sql {
             CREATE TABLE IF NOT EXISTS ipcm_peers(
                 "id"        VARCHAR(36)     NOT NULL PRIMARY KEY,
                 "pid"       INTEGER         DEFAULT NULL,
-                "active"    BOOL            NOT NULL DEFAULT TRUE,
+                "active"    NUMERIC         DEFAULT EXTRACT(epoch FROM NOW()),
                 "stats"     BYTEA           DEFAULT NULL
             );
         EOT

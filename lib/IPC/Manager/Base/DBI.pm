@@ -6,6 +6,7 @@ our $VERSION = '0.000006';
 
 use Carp qw/croak/;
 use Scalar::Util qw/blessed/;
+use Time::HiRes qw/time/;
 use File::Temp qw/tempfile/;
 
 use DBI;
@@ -90,12 +91,12 @@ sub init {
     my $e   = $self->escape;
 
     if ($row) {
-        my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}active${e} = TRUE, ${e}pid${e} = ? WHERE ${e}id${e} = ?");
-        $sth->execute($self->{+PID}, $self->{+ID}) or die $dbh->errstr;
+        my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}active${e} = ?, ${e}pid${e} = ? WHERE ${e}id${e} = ?");
+        $sth->execute(time, $self->{+PID}, $self->{+ID}) or die $dbh->errstr;
     }
     else {
-        my $sth = $dbh->prepare("INSERT INTO ipcm_peers(${e}id${e}, ${e}pid${e}, ${e}active${e}) VALUES (?, ?, TRUE)") or die $dbh->errstr;
-        $sth->execute($id, $self->{+PID}) or die $dbh->errstr;
+        my $sth = $dbh->prepare("INSERT INTO ipcm_peers(${e}id${e}, ${e}pid${e}, ${e}active${e}) VALUES (?, ?, ?)") or die $dbh->errstr;
+        $sth->execute($id, $self->{+PID}, time) or die $dbh->errstr;
     }
 }
 
@@ -142,7 +143,7 @@ sub peers {
 
     my $dbh = $self->dbh;
     my $e   = $self->escape;
-    my $sth = $dbh->prepare("SELECT ${e}id${e} FROM ipcm_peers WHERE ${e}id${e} != ? AND active = TRUE ORDER BY ${e}id${e} ASC") or die $dbh->errstr;
+    my $sth = $dbh->prepare("SELECT ${e}id${e} FROM ipcm_peers WHERE ${e}id${e} != ? AND active IS NOT NULL ORDER BY ${e}id${e} ASC") or die $dbh->errstr;
     $sth->execute($self->{+ID});
 
     return map { $_->[0] } @{$sth->fetchall_arrayref([0])};
@@ -240,7 +241,7 @@ sub pre_disconnect_hook {
 
     my $dbh = $self->dbh;
     my $e   = $self->escape;
-    my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}pid${e} = NULL, active = FALSE WHERE ${e}id${e} = ?") or die $dbh->errstr;
+    my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}pid${e} = NULL, active = NULL WHERE ${e}id${e} = ?") or die $dbh->errstr;
     $sth->execute($self->{+ID}) or die $dbh->errstr;
 }
 

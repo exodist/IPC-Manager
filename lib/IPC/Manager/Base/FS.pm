@@ -5,11 +5,12 @@ use warnings;
 our $VERSION = '0.000006';
 
 use File::Spec;
-use IO::Select;
 
 use Carp qw/croak/;
 use File::Temp qw/tempdir/;
 use File::Path qw/remove_tree/;
+
+use IPC::Manager::Util qw/USE_INOTIFY USE_IO_SELECT/;
 
 use parent 'IPC::Manager::Client';
 use Object::HashBase qw{
@@ -17,6 +18,7 @@ use Object::HashBase qw{
     +pidfile
     +resume_file
     +select
+    +peer_inotify
 };
 
 sub pending_messages { 0 }
@@ -30,11 +32,13 @@ sub path_type      { croak "Not Implemented" }
 
 sub have_resume_file { -e $_[0]->resume_file }
 
+sub can_select { USE_IO_SELECT() }
 sub select {
     my $self = shift;
 
     return $self->{+SELECT} if $self->{+SELECT};
 
+    croak "Not Implemented (Or you are missing IO::Select)" unless USE_IO_SELECT();
     my $sel = IO::Select->new;
     $sel->add($self->handles_for_select);
 
@@ -185,6 +189,22 @@ sub post_disconnect_hook {
 sub pre_suspend_hook {
     my $self = shift;
     $self->clear_pid;
+}
+
+sub reset_handles_for_peer_change { $self->{+PEER_INOTIFY}->read }
+sub have_handles_for_peer_change { USE_INOTIFY() }
+sub handles_for_peer_change {
+    my $self = shift;
+    croak "Not Implemented (Linux::Inotify2)" unless USE_INOTIFY();
+
+    unless ($self->{+PEER_INOTIFY}) {
+        my $i = Linux::Inotify2->new;
+        $i->blocking(0);
+        $i->watch($self->{+ROUTE}, Linux::Inotify2::IN_CREATE());
+        $self->{+PEER_INOTIFY} = $i;
+    }
+
+    return $self->{+PEER_INOTIFY}->fh;
 }
 
 sub peers {

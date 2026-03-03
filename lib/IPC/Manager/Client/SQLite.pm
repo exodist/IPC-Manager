@@ -22,7 +22,7 @@ sub table_sql {
             CREATE TABLE IF NOT EXISTS ipcm_peers(
                 `id`        CHAR(36)        NOT NULL PRIMARY KEY,
                 `pid`       INTEGER         DEFAULT NULL,
-                `active`    BOOL            NOT NULL DEFAULT TRUE,
+                `active`    BIGINT          DEFAULT (strftime('%s', 'now')),
                 `stats`     BLOB            DEFAULT NULL
             );
         EOT

@@ -9,6 +9,8 @@ use Carp qw/croak/;
 use IPC::Manager::Spawn();
 use IPC::Manager::Serializer::JSON();
 
+use IPC::Manager::Util qw/require_mod/;
+
 use Importer Importer => 'import';
 
 our @EXPORT_OK = qw/ipcm_connect ipcm_reconnect ipcm_spawn ipcm/;
@@ -38,8 +40,8 @@ sub _parse_cinfo {
         croak "Not sure what to do with $cinfo";
     }
 
-    _require_mod($protocol);
-    _require_mod($serializer);
+    require_mod($protocol);
+    require_mod($serializer);
 
     return ($protocol, $serializer, $route);
 }
@@ -64,16 +66,6 @@ sub _connect {
     return $protocol->$meth($id, $serializer, $route, %params);
 }
 
-sub _require_mod {
-    my $mod = shift;
-
-    my $file = $mod;
-    $file =~ s{::}{/}g;
-    $file .= ".pm";
-
-    require($file);
-}
-
 sub ipcm_spawn {
     my %params = @_;
 
@@ -92,14 +84,14 @@ sub ipcm_spawn {
 
     if ($protocol) {
         $protocol = _parse_protocol($protocol);
-        _require_mod($protocol);
+        require_mod($protocol);
     }
     else {
         for my $prot (@$protocols) {
             $prot = _parse_protocol($prot);
 
             local $@;
-            eval { _require_mod($prot); $prot->viable } or next;
+            eval { require_mod($prot); $prot->viable } or next;
 
             $protocol = $prot;
             last;
@@ -107,7 +99,7 @@ sub ipcm_spawn {
     }
 
     $serializer = _parse_serializer($serializer);
-    _require_mod($serializer);
+    require_mod($serializer);
 
     my ($route, $stash) = $protocol->spawn(%params, serializer => $serializer);
 

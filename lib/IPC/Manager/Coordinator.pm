@@ -2,10 +2,9 @@ package IPC::Manager::Coordinator;
 use strict;
 use warnings;
 
+use parent 'IPC::Manager::Coordinator::This';
 use Object::HashBase qw{
-    <name
-    <callback
-    <interval
+    <xxx
 };
 
 sub run {

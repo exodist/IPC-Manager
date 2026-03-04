@@ -276,7 +276,7 @@ IO is not disconnected.
 
 =item $spawn->shutdown()
 
-Shuws down the IPC system:
+Shuts down the IPC system:
 
     my $con = $spawn->connect('spawn');
 

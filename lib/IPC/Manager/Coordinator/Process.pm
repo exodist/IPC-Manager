@@ -33,7 +33,7 @@ sub client { $_[0]->{+CLIENT} //= IPC::Manager->ipcm_connect($_[0]->{+NAME}, $_[
 sub kill {
     my $self = shift;
     my ($sig) = @_;
-    $sig //= 'TERM';
+    croak "A signal is required" unless defined $sig;
     CORE::kill($sig, $self->pid);
 }
 

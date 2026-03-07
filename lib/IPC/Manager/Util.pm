@@ -28,6 +28,7 @@ our @EXPORT_OK = qw{
     USE_IO_SELECT
     require_mod
     pid_is_running
+    clone_io
 };
 
 sub require_mod {
@@ -52,6 +53,14 @@ sub pid_is_running {
     return 1 if kill(0, $pid);    # Running and we have perms
     return 0 if $! == ESRCH;      # Does not exist (not running)
     return -1;                    # Running, but not ours
+}
+
+sub clone_io {
+    my ($mode, $orig) = @_;
+    croak "No mode provided" unless $mode;
+    croak "No handle provided" unless $orig;
+    open(my $fh, $mode, $orig) or die "Could not clone filehandle: $!";
+    return $fh;
 }
 
 1;

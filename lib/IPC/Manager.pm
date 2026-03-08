@@ -5,7 +5,7 @@ use feature qw/state/;
 
 our $VERSION = '0.000006';
 
-use Carp qw/croak/;
+use Carp qw/croak carp/;
 
 use POSIX();
 use Role::Tiny();
@@ -17,13 +17,22 @@ use IPC::Manager::Util qw/require_mod clone_io/;
 
 use Importer Importer => 'import';
 
-our @EXPORT_OK = qw/ipcm_connect ipcm_reconnect ipcm_spawn ipcm/;
+our @EXPORT_OK = qw{
+    ipcm_connect
+    ipcm_reconnect
+    ipcm_spawn
+    ipcm
+
+    ipcm_service
+    ipcm_worker
+};
 
 sub ipcm()         { __PACKAGE__ }
 sub connect        { shift; ipcm_connect(@_) }
 sub reconnect      { shift; ipcm_reconnect(@_) }
 sub spawn          { shift; ipcm_spawn(@_) }
 sub service        { shift; ipcm_service(@_) }
+sub worker         { shift; ipcm_worker(@_) }
 sub ipcm_connect   { _connect(connect   => @_) }
 sub ipcm_reconnect { _connect(reconnect => @_) }
 
@@ -117,117 +126,145 @@ sub ipcm_spawn {
     );
 }
 
-sub ipcm_service {
-    state $service_inst;
-    my ($name, @args) = @_;
+{
+    my $base_0 = $0;
+    my $service_inst;
 
-    {
-        my $return_handle = defined(wantarray) ? 1 : 0;
+    sub ipcm_worker {
+        my ($name, $cb) = @_;
 
-        my %params;
-        if (@args == 1 && ref($args[0]) eq 'CODE') {
-            $params{class} = 'IPC::Manager::Service::AdHoc';
-            $params{on_all} = $args[0];
-        }
-        elsif (@args == 2 && ref($args[0]) eq 'HASH' && ref($args[1]) eq 'CODE') {
-            %params = %{$args[0]};
-            $params{class} = 'IPC::Manager::Service::AdHoc';
-            $params{on_all} = $args[1];
-        }
-        else {
-            %params = @_;
-        }
-
-        my $skip_role_checks = delete $params{skip_role_checks};
-
-        $params{name} = $name;
-
-        $params{orig_io} //= $service_inst ? $service_inst->orig_io : {
-            stderr => clone_io('>&', \*STDERR),
-            stdout => clone_io('>&', \*STDOUT),
-            stdin  => clone_io('<&', \*STDIN),
-        };
-
-        if ($service_inst && !$params{redirect}) {
-            if (my $redir = $service_inst->redirect) {
-                $params{redirect} = $redir unless defined($redir->{inherit}) && !$redir->{inherit};
-            }
-        }
-
-        my $new_ipcm = delete $params{new_ipcm};
-
-        my $handle_params = delete $params{handle_params} // {};
-        if ($params{ipcm_info}) {
-            croak "'new_ipcm' and 'ipcm_info' may not be combined" if $new_ipcm;
-        }
-        else {
-            if ($service_inst && !$new_ipcm) {
-                $handle_params->{_peer} = 1;
-                $params{ipcm_info} = $service_inst->ipcm_info;
-            }
-            elsif ($return_handle) {
-                $handle_params->{spawn} = ipcm_spawn();
-                $params{ipcm_info} = $handle_params->{spawn}->info;
-            }
-            else {
-                croak "Cannot be called in void context without providing 'ipcm_info'";
-            }
-        }
-
-        my $class = delete $params{class} // 'IPC::Manager::Service::AdHoc';
-
-        croak "'$class' does not implement the 'IPC::Manager::Service' role"
-            unless $skip_role_checks || Role::Tiny::does_role($class, 'IPC::Manager::Service');
-
-        my $new_inst = require_mod($class)->new(%params);
-
-        $new_inst->pre_fork_hook();
+        croak "ipcm_service_worker() can only be called from inside a service"
+            unless $service_inst && ref($service_inst) ne 'CODE';
 
         my $pid = fork // die "Could not fork: $!";
-
-        # In parent
         if ($pid) {
-            return unless $return_handle;
-            return $new_inst->peer($params{name}, %$handle_params) if delete $handle_params->{_peer};
-            return $new_inst->handle(%$handle_params);
+            $service_inst->register_worker($name => $pid);
+            return $pid;
         }
 
-        # Figure out if we already had a service
-        my $prev_service = $service_inst ? 1 : 0;
+        $0 = "$0 $name";
 
-        # Set the new instance as the current one
-        $service_inst = $new_inst;
-
-        my $rewind = delete $params{rewind_stack};
-
-        croak "'rewind_stack' requested, but service is not nested" if $rewind && !$prev_service;
-
-        # If we want the stack to unwind, use this to unwind it (nested services)
-        if ($prev_service && $rewind) {
-            no warnings 'exiting';
-            redo SERVICE;
-            die "This should not be reachable";
-        }
+        $service_inst = $cb;
+        no warnings 'exiting';
+        redo SERVICE;
+        die "This should not be reachable";
     }
 
-    # Run the service
-    # We have this label here for the 'redo' above.
-    SERVICE: {
-        # Get a copy to work with, the $service_inst can be replaced before this block exits.
-        my $using_service = $service_inst;
+    sub ipcm_service {
+        my ($name, @args) = @_;
 
-        eval {
-            my $exit = $using_service->run // 0;
-            $using_service->use_posix_exit ? POSIX::_exit($exit) : exit($exit);
-            1;
-        } or warn $@;
+        {
+            my $return_handle = defined(wantarray) ? 1 : 0;
 
+            my %params;
+            if (@args == 1 && ref($args[0]) eq 'CODE') {
+                $params{class}  = 'IPC::Manager::Service::AdHoc';
+                $params{on_all} = $args[0];
+            }
+            elsif (@args == 2 && ref($args[0]) eq 'HASH' && ref($args[1]) eq 'CODE') {
+                %params         = %{$args[0]};
+                $params{class}  = 'IPC::Manager::Service::AdHoc';
+                $params{on_all} = $args[1];
+            }
+            else {
+                %params = @_;
+            }
+
+            my $skip_role_checks = delete $params{skip_role_checks};
+
+            $params{name} = $name;
+
+            $params{orig_io} //= $service_inst ? $service_inst->orig_io : {
+                stderr => clone_io('>&', \*STDERR),
+                stdout => clone_io('>&', \*STDOUT),
+                stdin  => clone_io('<&', \*STDIN),
+            };
+
+            if ($service_inst && !$params{redirect}) {
+                if (my $redir = $service_inst->redirect) {
+                    $params{redirect} = $redir unless defined($redir->{inherit}) && !$redir->{inherit};
+                }
+            }
+
+            my $new_ipcm = delete $params{new_ipcm};
+
+            my $handle_params = delete $params{handle_params} // {};
+            if ($params{ipcm_info}) {
+                croak "'new_ipcm' and 'ipcm_info' may not be combined" if $new_ipcm;
+            }
+            else {
+                if ($service_inst && !$new_ipcm) {
+                    $handle_params->{_peer} = 1;
+                    $params{ipcm_info} = $service_inst->ipcm_info;
+                }
+                elsif ($return_handle) {
+                    $handle_params->{spawn} = ipcm_spawn();
+                    $params{ipcm_info} = $handle_params->{spawn}->info;
+                }
+                else {
+                    croak "Cannot be called in void context without providing 'ipcm_info'";
+                }
+            }
+
+            my $class = delete $params{class} // 'IPC::Manager::Service::AdHoc';
+
+            croak "'$class' does not implement the 'IPC::Manager::Service' role"
+                unless $skip_role_checks || Role::Tiny::does_role($class, 'IPC::Manager::Service');
+
+            my $new_inst = require_mod($class)->new(%params);
+
+            $new_inst->pre_fork_hook();
+
+            my $pid = fork // die "Could not fork: $!";
+
+            # In parent
+            if ($pid) {
+                return unless $return_handle;
+                return $new_inst->peer($params{name}, %$handle_params) if delete $handle_params->{_peer};
+                return $new_inst->handle(%$handle_params);
+            }
+
+            $0 = delete($params{rebase_0}) ? "$base_0 $name" : "$0 $name";
+
+            # Figure out if we already had a service
+            my $prev_service = $service_inst ? 1 : 0;
+
+            # Set the new instance as the current one
+            $service_inst = $new_inst;
+
+            # If we want the stack to unwind, use this to unwind it (nested services)
+            if ($prev_service) {
+                no warnings 'exiting';
+                redo SERVICE;
+                die "This should not be reachable";
+            }
+        }
+
+        # Run the service
+        # We have this label here for the 'redo' above.
+        SERVICE: {
+            # Get a copy to work with, the $service_inst can be replaced before this block exits.
+            my $using_service = $service_inst;
+
+            eval {
+                if (ref($using_service) eq 'CODE') {
+                    my $exit = $using_service->();
+                    exit($exit);
+                }
+                else {
+                    my $exit = $using_service->run() // 0;
+                    $using_service->use_posix_exit ? POSIX::_exit($exit) : exit($exit);
+                }
+                1;
+            } or warn $@;
+
+            POSIX::_exit(255);
+        }
+
+        # This should not be reachable....
+        eval { warn "Scope leak in service '$name' process $$" };
         POSIX::_exit(255);
     }
-
-    # This should not be reachable....
-    eval { warn "Scope leak in service '$name' process $$" };
-    POSIX::_exit(255);
 }
 
 1;

@@ -4,6 +4,7 @@ use warnings;
 
 # Not included in role:
 use Carp qw/croak/;
+use POSIX qw/:sys_wait_h/;
 use List::Util qw/any/;
 use Time::HiRes qw/time sleep/;
 use Test2::Util::UUID qw/gen_uuid/;
@@ -80,6 +81,46 @@ sub clear_service_fields {
     delete $self->{_PEER_STATE};
     delete $self->{_SIGS_SEEN};
     delete $self->{_TERMINATED};
+    delete $self->{_WORKERS};
+}
+
+sub register_worker {
+    my $self = shift;
+    my ($name, $pid) = @_;
+
+    $self->{_WORKERS}->{$pid} = $name;
+}
+
+sub workers {
+    my $self = shift;
+    return $self->{_WORKERS};
+}
+
+sub reap_workers {
+    my $self = shift;
+
+    my $workers = $self->{_WORKERS} or return;
+
+    my %out;
+    for my $pid (keys %$workers) {
+        local $?;
+        my $check = waitpid($pid, WNOHANG) or next;
+        my $exit = $?;
+
+        my $name = delete $workers->{$pid};
+
+        if ($check == $pid) {
+            $out{$pid} = {name => $name, exit => $exit};
+        }
+        elsif ($check < 0) {
+            $out{$pid} = {name => $name, exit => $check};
+        }
+        else {
+            die "Nonsensical return from waitpid";
+        }
+    }
+
+    return \%out;
 }
 
 sub run_on_message {

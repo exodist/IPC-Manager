@@ -1,4 +1,4 @@
-package IPC::Manager::ServiceHandle;
+package IPC::Manager::Service::Handle;
 use strict;
 use warnings;
 
@@ -8,8 +8,8 @@ use Test2::Util::UUID qw/gen_uuid/;
 
 use Role::Tiny::With;
 
-with 'IPC::Manager::ServiceSelect';
-with 'IPC::Manager::ServiceRequests';
+with 'IPC::Manager::Role::Service::Select';
+with 'IPC::Manager::Role::Service::Requests';
 
 use Object::HashBase qw{
     <service_name

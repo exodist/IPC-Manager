@@ -1,4 +1,4 @@
-package IPC::Manager::ServiceSelect;
+package IPC::Manager::Role::Service::Select;
 use strict;
 use warnings;
 

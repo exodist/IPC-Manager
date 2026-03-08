@@ -1,4 +1,4 @@
-package IPC::Manager::ServiceRequests;
+package IPC::Manager::Role::Service::Requests;
 use strict;
 use warnings;
 

@@ -64,3 +64,84 @@ sub clone_io {
 }
 
 1;
+
+__END__
+
+=pod
+
+=encoding UTF-8
+
+=head1 NAME
+
+IPC::Manager::Util - Utility functions for IPC::Manager
+
+=head1 DESCRIPTION
+
+This module provides utility functions used throughout the IPC::Manager
+distribution.
+
+=head1 EXPORTS
+
+The following functions are available via C<use IPC::Manager::Util qw(...)>:
+
+=over 4
+
+=item USE_INOTIFY
+
+Returns true if the Linux::Inotify2 module is available and supports C<fh>.
+
+=item USE_IO_SELECT
+
+Returns true if the IO::Select module is available.
+
+=item require_mod($module)
+
+Loads a module by name. Converts C<::> to C</> and appends C<.pm>.
+
+=item pid_is_running($pid)
+
+Checks if a PID is running.
+
+Returns:
+- 1 if the process is running and we have permissions
+- 0 if the process does not exist
+- -1 if the process is running but we don't have permissions
+
+=item clone_io($mode, $orig)
+
+Clones a filehandle. C<$mode> is the open mode (e.g. C<"<">, C<">">, C<"+<">),
+and C<$orig> is the filehandle or filename to clone.
+
+=back
+
+=head1 SOURCE
+
+The source code repository for IPC::Manager can be found at
+L<https://github.com/exodist/IPC-Manager>.
+
+=head1 MAINTAINERS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 AUTHORS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright Chad Granum E<lt>exodist7@gmail.comE<gt>.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+See L<https://dev.perl.org/licenses/>
+
+=cut

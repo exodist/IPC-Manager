@@ -435,3 +435,280 @@ sub run {
 }
 
 1;
+
+__END__
+
+=pod
+
+=encoding UTF-8
+
+=head1 NAME
+
+IPC::Manager::Role::Service - Role for implementing IPC services with message handling
+
+=head1 DESCRIPTION
+
+This role provides the core functionality for IPC services including:
+- Message handling (requests/responses)
+- Peer management and delta detection
+- Signal handling
+- Worker process management
+- Main event loop via the C<run()> method
+
+It composes with L<IPC::Manager::Role::Service::Select> and
+L<IPC::Manager::Role::Service::Requests> for I/O multiplexing and request/response
+patterns.
+
+=head1 SYNOPSIS
+
+    package MyService;
+    use Role::Tiny;
+    with 'IPC::Manager::Role::Service';
+
+    sub handle_request {
+        my ($self, $request, $msg) = @_;
+        return {result => 'ok'};
+    }
+
+    sub run_on_start {
+        my $self = shift;
+        $self->debug("Service started\n");
+    }
+
+    sub run_on_interval {
+        my $self = shift;
+        $self->debug("Interval tick\n");
+    }
+
+    MyService->new(name => 'myservice', ...)->run;
+
+=head1 REQUIRED METHODS
+
+These methods must be implemented by the consuming class:
+
+=over 4
+
+=item $self->new(%params)
+
+Constructor. Must accept parameters for initialization.
+
+=item $self->orig_io()
+
+Returns a hashref with optional C<stdout> and C<stderr> filehandles for
+debug output.
+
+=item $self->name()
+
+Returns the service name.
+
+=item $self->run()
+
+Runs the main event loop. Returns when the service is terminated.
+
+=item $self->ipcm_info()
+
+Returns connection information for the IPC system.
+
+=item $self->pid()
+
+Returns the process ID.
+
+=item $self->set_pid($pid)
+
+Sets the process ID (used after fork).
+
+=item $self->watch_pids()
+
+Returns an arrayref of PIDs to watch. If any terminates, the service exits.
+
+=item $self->handle_request($request, $msg)
+
+Handles an incoming request message. Returns a list of response values.
+
+=back
+
+=head1 METHODS
+
+=over 4
+
+=item $self->cycle()
+
+Returns the select cycle time (default: 0.2 seconds).
+
+=item $self->interval()
+
+Returns the interval for C<run_on_interval> callbacks (default: 0.2 seconds).
+
+=item $self->use_posix_exit()
+
+Returns whether to use POSIX exit codes (default: 0).
+
+=item $self->intercept_errors()
+
+Returns whether to intercept and log errors (default: 0).
+
+=item $self->terminated([$val])
+
+Gets or sets the termination status.
+
+=item $self->is_terminated()
+
+Returns true if the service is terminated.
+
+=item $self->terminate([$val])
+
+Sets the termination status. Returns the current value.
+
+=item $self->peer_class()
+
+Returns the class to use for peer connections (default: C<IPC::Manager::Service::Peer>).
+
+=item $self->handle_class()
+
+Returns the class to use for handles (default: C<IPC::Manager::Service::Handle>).
+
+=item $self->signals_to_grab()
+
+Returns a list of signals to intercept (default: empty).
+
+=item $self->redirect()
+
+Override to redirect I/O. Called during startup.
+
+=item $self->pre_fork_hook()
+
+Override to run code before forking workers.
+
+=item $self->run_on_all($activity)
+
+Called for every activity cycle with the activity hashref.
+
+=item $self->run_on_cleanup()
+
+Called when the service is shutting down.
+
+=item $self->run_on_general_message($msg)
+
+Called for messages that are not requests or responses.
+
+=item $self->run_on_interval()
+
+Called at regular intervals (controlled by C<interval()>).
+
+=item $self->run_on_peer_delta($delta)
+
+Called when peer connections change. C<$delta> is a hashref showing added/removed peers.
+
+=item $self->run_on_sig($sig)
+
+Called when a signal is received.
+
+=item $self->run_on_start()
+
+Called on startup before the main loop.
+
+=item $self->run_should_end()
+
+Called to determine if the service should exit. Return true to terminate.
+
+=item $self->run_on_unhandled($activity)
+
+Called when activity remains unhandled after processing. Dies by default.
+
+=item $self->clear_service_fields()
+
+Clears all internal state fields.
+
+=item $self->register_worker($name, $pid)
+
+Registers a worker process.
+
+=item $self->workers()
+
+Returns a hashref of worker PIDs to names.
+
+=item $self->reap_workers()
+
+Reaps terminated worker processes. Returns a hashref of results.
+
+=item $self->send_response($peer, $id, $resp)
+
+Sends a response message to a peer.
+
+=item $self->client()
+
+Returns the client connection for this service.
+
+=item $self->in_correct_pid()
+
+Verifies we're running in the correct process. Dies if not.
+
+=item $self->kill($sig)
+
+Sends a signal to the service process.
+
+=item $self->debug(@msg)
+
+Outputs debug messages to the appropriate filehandle.
+
+=item $self->handle(%params)
+
+Creates a new handle for connecting to this service.
+
+=item $self->peer($name, %params)
+
+Creates a peer connection to another service.
+
+=item $self->try($cb)
+
+Executes a callback with optional error interception.
+
+=item $self->peer_delta(%params)
+
+Returns a hashref showing changes in peer connections.
+
+=item $self->select_handles()
+
+Returns a list of filehandles for select().
+
+=item $self->watch($sig_seen)
+
+Waits for activity and returns an activity hashref.
+
+=item $self->run()
+
+Runs the main event loop until terminated.
+
+=back
+
+=head1 SOURCE
+
+The source code repository for IPC::Manager can be found at
+L<https://github.com/exodist/IPC-Manager>.
+
+=head1 MAINTAINERS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 AUTHORS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright Chad Granum E<lt>exodist7@gmail.comE<gt>.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+See L<https://dev.perl.org/licenses/>
+
+=cut

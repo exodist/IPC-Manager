@@ -42,3 +42,104 @@ sub get_response {
 }
 
 1;
+
+__END__
+
+=pod
+
+=encoding UTF-8
+
+=head1 NAME
+
+IPC::Manager::Service::Peer - Peer connection class for IPC::Manager services
+
+=head1 DESCRIPTION
+
+This class represents a connection to another service in the IPC system.
+It provides methods to send requests and get responses through the parent
+service's client connection.
+
+=head1 SYNOPSIS
+
+    my $peer = IPC::Manager::Service::Peer->new(
+        name    => 'other-service',
+        service => $service_obj,
+    );
+
+    # Send a request
+    my $id = $peer->send_request({action => 'do_something'});
+
+    # Get a response (non-blocking)
+    my ($response) = $peer->get_response($id);
+
+    # Mark peer as ready
+    $peer->ready;
+
+=head1 ATTRIBUTES
+
+=over 4
+
+=item name
+
+The name of the peer service (required).
+
+=item service
+
+The parent service object (required). Must be the current process.
+
+=back
+
+=head1 METHODS
+
+=over 4
+
+=item $self->ready()
+
+Notifies the peer that this connection is ready.
+
+=item $self->send_request($req, $cb)
+
+Sends a request to the peer. C<$req> is the request data, C<$cb> is an
+optional callback for async responses.
+
+Returns the request ID.
+
+=item $self->get_response($id)
+
+Gets a response for a previously sent request.
+
+Returns a list of response values, or empty list if no response ready.
+
+=back
+
+=head1 SOURCE
+
+The source code repository for IPC::Manager can be found at
+L<https://github.com/exodist/IPC-Manager>.
+
+=head1 MAINTAINERS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 AUTHORS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright Chad Granum E<lt>exodist7@gmail.comE<gt>.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+See L<https://dev.perl.org/licenses/>
+
+=cut

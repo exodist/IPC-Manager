@@ -130,3 +130,215 @@ BEGIN {
 }
 
 1;
+
+__END__
+
+=pod
+
+=encoding UTF-8
+
+=head1 NAME
+
+IPC::Manager::Service - Base class for creating IPC services
+
+=head1 DESCRIPTION
+
+This class provides a concrete implementation of the
+L<IPC::Manager::Role::Service> role for creating IPC services. It handles
+message handling, peer management, signal handling, and the main event loop.
+
+=head1 SYNOPSIS
+
+    use IPC::Manager::Service;
+
+    my $service = IPC::Manager::Service->new(
+        name           => 'my-service',
+        ipcm_info      => $ipcm_info,
+        handle_request => sub {
+            my ($self, $request, $msg) = @_;
+            return {result => 'ok'};
+        },
+    );
+
+    $service->run;
+
+=head1 CONSTRUCTOR ARGUMENTS
+
+=over 4
+
+=item name
+
+The service name (required).
+
+=item orig_io
+
+Hashref with optional C<stdout> and C<stderr> filehandles for debug output.
+
+=item ipcm_info
+
+Connection information for the IPC system.
+
+=item redirect
+
+Boolean indicating whether to redirect I/O.
+
+=item pid
+
+The process ID.
+
+=item use_posix_exit
+
+Boolean indicating whether to use POSIX exit codes.
+
+=item intercept_errors
+
+Boolean indicating whether to intercept and log errors.
+
+=item watch_pids
+
+Arrayref of PIDs to watch. If any terminates, the service exits.
+
+=item interval
+
+Interval for C<run_on_interval> callbacks (default: 0.2 seconds).
+
+=item cycle
+
+Select cycle time (default: 0.2 seconds).
+
+=item on_sig => {\%hash}
+
+Hash of signal names to callback(s) for signal handling.
+
+=item handle_request => \&callback
+
+Callback for handling requests. Required unless C<on_all> is provided.
+
+=item handle_response => \&callback
+
+Callback for handling responses. Defaults to confessing if not provided.
+
+=item on_all => \&callback
+
+Callback called for every activity cycle. If provided, C<handle_request> and
+C<handle_response> default to no-ops.
+
+=item on_cleanup => \&callback
+
+Callback called when the service is shutting down.
+
+=item on_general_message => \&callback
+
+Callback for messages that are not requests or responses.
+
+=item on_interval => \&callback
+
+Callback called at regular intervals.
+
+=item on_peer_delta => \&callback
+
+Callback called when peer connections change.
+
+=item on_start => \&callback
+
+Callback called on startup before the main loop.
+
+=item on_unhandled => \&callback
+
+Callback called when activity remains unhandled. Dies by default.
+
+=item should_end => \&callback
+
+Callback called to determine if the service should exit.
+
+=back
+
+=head1 METHODS
+
+=over 4
+
+=item $self->signals_to_grab()
+
+Returns a list of signals to intercept.
+
+=item $self->handle_request($request, $msg)
+
+Calls the configured request handler.
+
+=item $self->handle_response($resp, $msg)
+
+Calls the configured response handler.
+
+=item $self->clear_on_sig($sig)
+
+Clears all handlers for a signal.
+
+=item $self->push_on_sig($sig, $cb)
+
+Adds a callback to the signal handlers.
+
+=item $self->unshift_on_sig($sig, $cb)
+
+Prepends a callback to the signal handlers.
+
+=item $self->run_on_sig($sig, @args)
+
+Runs all callbacks for a signal.
+
+=item $self->remove_on_sig($sig, $cb)
+
+Removes a specific callback from signal handlers.
+
+=item $self->clear_$key()
+
+Clears the array of callbacks for an action.
+
+=item $self->push_$key($cb)
+
+Adds a callback to the action's callback array.
+
+=item $self->unshift_$key($cb)
+
+Prepends a callback to the action's callback array.
+
+=item $self->run_$key(@args)
+
+Runs all callbacks for an action.
+
+=item $self->remove_$key($cb)
+
+Removes a specific callback from the action's callback array.
+
+=back
+
+=head1 SOURCE
+
+The source code repository for IPC::Manager can be found at
+L<https://github.com/exodist/IPC-Manager>.
+
+=head1 MAINTAINERS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 AUTHORS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright Chad Granum E<lt>exodist7@gmail.comE<gt>.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+See L<https://dev.perl.org/licenses/>
+
+=cut

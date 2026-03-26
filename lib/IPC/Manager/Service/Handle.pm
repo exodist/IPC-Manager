@@ -146,3 +146,153 @@ sub poll {
 }
 
 1;
+
+__END__
+
+=pod
+
+=encoding UTF-8
+
+=head1 NAME
+
+IPC::Manager::Service::Handle - Handle class for connecting to IPC services
+
+=head1 DESCRIPTION
+
+This class provides a client-side handle for connecting to IPC services.
+It manages the connection to a service and provides methods for sending
+requests and receiving responses.
+
+It composes with L<IPC::Manager::Role::Service::Select> and
+L<IPC::Manager::Role::Service::Requests> for I/O multiplexing and
+request/response patterns.
+
+=head1 SYNOPSIS
+
+    my $handle = IPC::Manager::Service::Handle->new(
+        service_name => 'my-service',
+        ipcm_info    => $ipcm_info,
+    );
+
+    # Send a synchronous request
+    my $response = $handle->sync_request({action => 'do_something'});
+
+    # Poll for messages
+    $handle->poll;
+
+    # Get buffered messages
+    my @messages = $handle->messages;
+
+=head1 ATTRIBUTES
+
+=over 4
+
+=item service_name
+
+The name of the service to connect to (required).
+
+=item name
+
+The name of this handle connection (optional, defaults to a UUID).
+
+=item ipcm_info
+
+Connection information for the IPC system (required).
+
+=item interval
+
+Polling interval in seconds (default: 0.2).
+
+=item client
+
+The underlying client connection (internal use).
+
+=item request_callbacks
+
+Hash of request callbacks (internal use).
+
+=item requests
+
+Hash of pending requests (internal use).
+
+=item buffer
+
+Array of received messages (internal use).
+
+=back
+
+=head1 METHODS
+
+=over 4
+
+=item $self->select_handles()
+
+Returns a list of filehandles for select().
+
+=item $self->ready()
+
+Notifies the peer that this connection is ready.
+
+=item $self->client()
+
+Returns the client connection, creating it if necessary.
+
+=item $self->service_pid()
+
+Returns the PID of the peer service.
+
+=item $self->sync_request($req, ...)
+
+Sends a request and waits for the response. Returns the response.
+
+=item $self->await_response($id)
+
+Waits for a response to a request. Returns the response when available.
+
+=item $self->await_all_responses()
+
+Waits for all pending responses to arrive.
+
+=item $self->messages()
+
+Returns and clears the message buffer.
+
+=item $self->poll([$timeout])
+
+Polls for messages. Returns the number of messages received.
+
+If C<$timeout> is provided, waits up to that many seconds for messages.
+
+=back
+
+=head1 SOURCE
+
+The source code repository for IPC::Manager can be found at
+L<https://github.com/exodist/IPC-Manager>.
+
+=head1 MAINTAINERS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 AUTHORS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright Chad Granum E<lt>exodist7@gmail.comE<gt>.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+See L<https://dev.perl.org/licenses/>
+
+=cut

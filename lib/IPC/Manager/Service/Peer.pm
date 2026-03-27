@@ -51,7 +51,7 @@ __END__
 
 =head1 NAME
 
-IPC::Manager::Service::Peer - Peer connection class for IPC::Manager services
+IPC::Manager::Service::Peer - Peer connection class for L<IPC::Manager> services
 
 =head1 DESCRIPTION
 
@@ -66,14 +66,16 @@ service's client connection.
         service => $service_obj,
     );
 
-    # Send a request
-    my $id = $peer->send_request({action => 'do_something'});
+    # Check if peer is ready
+    if ($peer->ready) {
+        # Send a request
+        my $id = $peer->send_request({action => 'do_something'});
 
-    # Get a response (non-blocking)
-    my ($response) = $peer->get_response($id);
-
-    # Mark peer as ready
-    $peer->ready;
+        # Get a response (non-blocking)
+        if (my $response = $peer->get_response($id)) {
+            ...
+        }
+    }
 
 =head1 ATTRIBUTES
 
@@ -85,7 +87,7 @@ The name of the peer service (required).
 
 =item service
 
-The parent service object (required). Must be the current process.
+The parent service object (required). Must be running in the current process.
 
 =back
 
@@ -93,9 +95,11 @@ The parent service object (required). Must be the current process.
 
 =over 4
 
-=item $self->ready()
+=item $bool = $self->ready()
 
-Notifies the peer that this connection is ready.
+Check if the peer is ready for requests.
+
+=item $id = $self->send_request($req)
 
 =item $self->send_request($req, $cb)
 
@@ -104,11 +108,14 @@ optional callback for async responses.
 
 Returns the request ID.
 
-=item $self->get_response($id)
+=item $res = $self->get_response($id)
 
 Gets a response for a previously sent request.
 
-Returns a list of response values, or empty list if no response ready.
+If the response is ready it is returned, otherwise undef is returned.
+
+Exceptions will be thrown if the $id is invalid, or if the response has already
+been fetched.
 
 =back
 

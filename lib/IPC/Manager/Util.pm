@@ -86,31 +86,40 @@ The following functions are available via C<use IPC::Manager::Util qw(...)>:
 
 =over 4
 
-=item USE_INOTIFY
+=item $bool = USE_INOTIFY()
 
-Returns true if the Linux::Inotify2 module is available and supports C<fh>.
+Returns true if the L<Linux::Inotify2> module is available and supports the
+C<fh> method.
 
-=item USE_IO_SELECT
+This can be used as a constant.
 
-Returns true if the IO::Select module is available.
+=item $bool = USE_IO_SELECT()
 
-=item require_mod($module)
+Returns true if the L<IO::Select> module is available.
+
+=item $mod = require_mod($module)
 
 Loads a module by name. Converts C<::> to C</> and appends C<.pm>.
 
-=item pid_is_running($pid)
+Returns the original input.
+
+=item $val = pid_is_running($pid)
 
 Checks if a PID is running.
 
-Returns:
-- 1 if the process is running and we have permissions
-- 0 if the process does not exist
-- -1 if the process is running but we don't have permissions
+returns 1 if the process is running and we have permissions.
 
-=item clone_io($mode, $orig)
+returns 0 if the process does not exist.
 
-Clones a filehandle. C<$mode> is the open mode (e.g. C<"<">, C<">">, C<"+<">),
-and C<$orig> is the filehandle or filename to clone.
+return -1 if the process is running but we don't have permissions to do
+anything with it.
+
+=item $fh = clone_io($mode, $orig)
+
+Clones a filehandle. C<$mode> is the open mode (e.g. C<< '<' >>, C<< '>' >>,
+C<< '+<' >>), and C<$orig> is the filehandle to clone.
+
+Returns the filehandle clone.
 
 =back
 

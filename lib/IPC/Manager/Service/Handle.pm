@@ -225,27 +225,27 @@ Array of received messages (internal use).
 
 =over 4
 
-=item $self->select_handles()
+=item @file_handles = $self->select_handles()
 
 Returns a list of filehandles for select().
 
-=item $self->ready()
+=item $bool = $self->ready()
 
-Notifies the peer that this connection is ready.
+Returns true if the handle is ready to use
 
-=item $self->client()
+=item $client = $self->client()
 
 Returns the client connection, creating it if necessary.
 
-=item $self->service_pid()
+=item $pid = $self->service_pid()
 
 Returns the PID of the peer service.
 
-=item $self->sync_request($req, ...)
+=item $res = $self->sync_request($req)
 
 Sends a request and waits for the response. Returns the response.
 
-=item $self->await_response($id)
+=item $res = $self->await_response($id)
 
 Waits for a response to a request. Returns the response when available.
 
@@ -253,11 +253,13 @@ Waits for a response to a request. Returns the response when available.
 
 Waits for all pending responses to arrive.
 
-=item $self->messages()
+=item @messages = $self->messages()
 
 Returns and clears the message buffer.
 
-=item $self->poll([$timeout])
+=item $self->poll()
+
+=item $self->poll($timeout)
 
 Polls for messages. Returns the number of messages received.
 

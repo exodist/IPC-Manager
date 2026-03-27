@@ -257,13 +257,15 @@ Callback called to determine if the service should exit.
 
 =over 4
 
-=item $self->signals_to_grab()
+=item @signal_names = $self->signals_to_grab()
 
 Returns a list of signals to intercept.
 
-=item $self->handle_request($request, $msg)
+=item ($resp) = $self->handle_request($request, $msg)
 
-Calls the configured request handler.
+Calls the configured request handler. The handler should return a single item
+(scalar, undef, reference) when if the response is ready. Should return an
+empty list if the request needs further processing.
 
 =item $self->handle_response($resp, $msg)
 
@@ -289,25 +291,165 @@ Runs all callbacks for a signal.
 
 Removes a specific callback from signal handlers.
 
-=item $self->clear_$key()
+=item $self->clear_on_all()
 
-Clears the array of callbacks for an action.
+Clears the array of callbacks for C<on_all>.
 
-=item $self->push_$key($cb)
+=item $self->push_on_all($cb)
 
-Adds a callback to the action's callback array.
+Adds a callback to the C<on_all> callback array.
 
-=item $self->unshift_$key($cb)
+=item $self->unshift_on_all($cb)
 
-Prepends a callback to the action's callback array.
+Prepends a callback to the C<on_all> callback array.
 
-=item $self->run_$key(@args)
+=item $self->run_on_all(@args)
 
-Runs all callbacks for an action.
+Runs all callbacks for C<on_all>.
 
-=item $self->remove_$key($cb)
+=item $self->remove_on_all($cb)
 
-Removes a specific callback from the action's callback array.
+Removes a specific callback from the C<on_all> callback array.
+
+=item $self->clear_on_cleanup()
+
+Clears the array of callbacks for C<on_cleanup>.
+
+=item $self->push_on_cleanup($cb)
+
+Adds a callback to the C<on_cleanup> callback array.
+
+=item $self->unshift_on_cleanup($cb)
+
+Prepends a callback to the C<on_cleanup> callback array.
+
+=item $self->run_on_cleanup(@args)
+
+Runs all callbacks for C<on_cleanup>.
+
+=item $self->remove_on_cleanup($cb)
+
+Removes a specific callback from the C<on_cleanup> callback array.
+
+=item $self->clear_on_general_message()
+
+Clears the array of callbacks for C<on_general_message>.
+
+=item $self->push_on_general_message($cb)
+
+Adds a callback to the C<on_general_message> callback array.
+
+=item $self->unshift_on_general_message($cb)
+
+Prepends a callback to the C<on_general_message> callback array.
+
+=item $self->run_on_general_message(@args)
+
+Runs all callbacks for C<on_general_message>.
+
+=item $self->remove_on_general_message($cb)
+
+Removes a specific callback from the C<on_general_message> callback array.
+
+=item $self->clear_on_interval()
+
+Clears the array of callbacks for C<on_interval>.
+
+=item $self->push_on_interval($cb)
+
+Adds a callback to the C<on_interval> callback array.
+
+=item $self->unshift_on_interval($cb)
+
+Prepends a callback to the C<on_interval> callback array.
+
+=item $self->run_on_interval(@args)
+
+Runs all callbacks for C<on_interval>.
+
+=item $self->remove_on_interval($cb)
+
+Removes a specific callback from the C<on_interval> callback array.
+
+=item $self->clear_on_peer_delta()
+
+Clears the array of callbacks for C<on_peer_delta>.
+
+=item $self->push_on_peer_delta($cb)
+
+Adds a callback to the C<on_peer_delta> callback array.
+
+=item $self->unshift_on_peer_delta($cb)
+
+Prepends a callback to the C<on_peer_delta> callback array.
+
+=item $self->run_on_peer_delta(@args)
+
+Runs all callbacks for C<on_peer_delta>.
+
+=item $self->remove_on_peer_delta($cb)
+
+Removes a specific callback from the C<on_peer_delta> callback array.
+
+=item $self->clear_on_start()
+
+Clears the array of callbacks for C<on_start>.
+
+=item $self->push_on_start($cb)
+
+Adds a callback to the C<on_start> callback array.
+
+=item $self->unshift_on_start($cb)
+
+Prepends a callback to the C<on_start> callback array.
+
+=item $self->run_on_start(@args)
+
+Runs all callbacks for C<on_start>.
+
+=item $self->remove_on_start($cb)
+
+Removes a specific callback from the C<on_start> callback array.
+
+=item $self->clear_on_unhandled()
+
+Clears the array of callbacks for C<on_unhandled>.
+
+=item $self->push_on_unhandled($cb)
+
+Adds a callback to the C<on_unhandled> callback array.
+
+=item $self->unshift_on_unhandled($cb)
+
+Prepends a callback to the C<on_unhandled> callback array.
+
+=item $self->run_on_unhandled(@args)
+
+Runs all callbacks for C<on_unhandled>.
+
+=item $self->remove_on_unhandled($cb)
+
+Removes a specific callback from the C<on_unhandled> callback array.
+
+=item $self->clear_should_end()
+
+Clears the array of callbacks for C<should_end>.
+
+=item $self->push_should_end($cb)
+
+Adds a callback to the C<should_end> callback array.
+
+=item $self->unshift_should_end($cb)
+
+Prepends a callback to the C<should_end> callback array.
+
+=item $self->run_should_end(@args)
+
+Runs all callbacks for C<should_end>. Returns true if any callback returns true.
+
+=item $self->remove_should_end($cb)
+
+Removes a specific callback from the C<should_end> callback array.
 
 =back
 

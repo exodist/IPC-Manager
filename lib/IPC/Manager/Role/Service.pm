@@ -449,11 +449,20 @@ IPC::Manager::Role::Service - Role for implementing IPC services with message ha
 =head1 DESCRIPTION
 
 This role provides the core functionality for IPC services including:
-- Message handling (requests/responses)
-- Peer management and delta detection
-- Signal handling
-- Worker process management
-- Main event loop via the C<run()> method
+
+=over 4
+
+=item Message handling (requests/responses)
+
+=item Peer management and delta detection
+
+=item Signal handling
+
+=item Worker process management
+
+=item Main event loop via the C<run()> method
+
+=back
 
 It composes with L<IPC::Manager::Role::Service::Select> and
 L<IPC::Manager::Role::Service::Requests> for I/O multiplexing and request/response
@@ -462,25 +471,28 @@ patterns.
 =head1 SYNOPSIS
 
     package MyService;
-    use Role::Tiny;
+    use Role::Tiny::With;
     with 'IPC::Manager::Role::Service';
 
-    sub handle_request {
-        my ($self, $request, $msg) = @_;
-        return {result => 'ok'};
-    }
+    sub new { ... }
 
-    sub run_on_start {
-        my $self = shift;
-        $self->debug("Service started\n");
-    }
+    sub orig_io { ... }
 
-    sub run_on_interval {
-        my $self = shift;
-        $self->debug("Interval tick\n");
-    }
+    sub name { ... }
 
-    MyService->new(name => 'myservice', ...)->run;
+    sub run { ... }
+
+    sub ipcm_info { ... }
+
+    sub pid { ... }
+
+    sub set_pid { ... }
+
+    sub watch_pids { ... }
+
+    sub handle_request { ... }
+
+    1;
 
 =head1 REQUIRED METHODS
 
@@ -488,42 +500,49 @@ These methods must be implemented by the consuming class:
 
 =over 4
 
-=item $self->new(%params)
+=item $inst = $class->new(%params)
 
 Constructor. Must accept parameters for initialization.
 
-=item $self->orig_io()
+=item $io = $self->orig_io()
 
-Returns a hashref with optional C<stdout> and C<stderr> filehandles for
-debug output.
+Returns a hashref with optional C<stdout>, C<stderr>, or C<stdin> filehandles.
 
-=item $self->name()
+=item $string = $self->name()
 
 Returns the service name.
 
-=item $self->run()
+=item $exit = $self->run()
 
-Runs the main event loop. Returns when the service is terminated.
+Runs the main event loop. Returns when the service is terminated. Should return
+an exit code.
 
-=item $self->ipcm_info()
+=item $info = $self->ipcm_info()
 
 Returns connection information for the IPC system.
 
-=item $self->pid()
+=item $pid = $self->pid()
 
-Returns the process ID.
+Returns the process ID the service is supposed to be confined to.
 
 =item $self->set_pid($pid)
 
 Sets the process ID (used after fork).
 
-=item $self->watch_pids()
+=item $pids_arrayref = $self->watch_pids()
 
 Returns an arrayref of PIDs to watch. If any terminates, the service exits.
 
-=item $self->handle_request($request, $msg)
+=item ($resp) = $self->handle_request($request, $msg)
 
-Handles an incoming request message. Returns a list of response values.
+Handles an incoming request message.
+
+Should return an empty list if the request is being processed, but no response
+is ready.
+
+Should return a single item (undef, scalar, or reference) for a response.
+
+If this returns multiple items an exception will be thrown.
 
 =back
 
@@ -547,41 +566,47 @@ Returns whether to use POSIX exit codes (default: 0).
 
 Returns whether to intercept and log errors (default: 0).
 
-=item $self->terminated([$val])
+=item $val = $self->terminated()
 
-Gets or sets the termination status.
+Gets the termination status.
 
 =item $self->is_terminated()
 
 Returns true if the service is terminated.
 
-=item $self->terminate([$val])
+=item $val = $self->terminate()
 
-Sets the termination status. Returns the current value.
+=item $val = $self->terminate($val)
 
-=item $self->peer_class()
+Sets the termination status. If no value is provided then C<0> is used. Returns
+the new value.
+
+=item $class = $self->peer_class()
 
 Returns the class to use for peer connections (default: C<IPC::Manager::Service::Peer>).
 
-=item $self->handle_class()
+=item $class = $self->handle_class()
 
 Returns the class to use for handles (default: C<IPC::Manager::Service::Handle>).
 
-=item $self->signals_to_grab()
+=item @signal_names = $self->signals_to_grab()
 
 Returns a list of signals to intercept (default: empty).
 
 =item $self->redirect()
 
-Override to redirect I/O. Called during startup.
+Override to redirect I/O. Called during startup. Default implementation is a
+no-op.
 
 =item $self->pre_fork_hook()
 
-Override to run code before forking workers.
+Override to run code before forking workers. Default implementation is a no-op.
 
 =item $self->run_on_all($activity)
 
-Called for every activity cycle with the activity hashref.
+Called for every iteration of the service's main loop.
+
+See the L</"ACTIVITY HASH"> for a description of the C<$activity> input.
 
 =item $self->run_on_cleanup()
 
@@ -599,9 +624,12 @@ Called at regular intervals (controlled by C<interval()>).
 
 Called when peer connections change. C<$delta> is a hashref showing added/removed peers.
 
+The L</"ACTIVITY HASH"> section shows the structure of the peer_delta as well.
+
 =item $self->run_on_sig($sig)
 
-Called when a signal is received.
+Called when a signal is received. May be called multiple times in rapid
+succession in a single loop iteration if a signal is recieved more than once.
 
 =item $self->run_on_start()
 
@@ -614,6 +642,8 @@ Called to determine if the service should exit. Return true to terminate.
 =item $self->run_on_unhandled($activity)
 
 Called when activity remains unhandled after processing. Dies by default.
+
+See the L</"ACTIVITY HASH"> for a description of the C<$activity> input.
 
 =item $self->clear_service_fields()
 
@@ -635,7 +665,7 @@ Reaps terminated worker processes. Returns a hashref of results.
 
 Sends a response message to a peer.
 
-=item $self->client()
+=item $client = $self->client()
 
 Returns the client connection for this service.
 
@@ -651,7 +681,7 @@ Sends a signal to the service process.
 
 Outputs debug messages to the appropriate filehandle.
 
-=item $self->handle(%params)
+=item $self->handle(name => $name, %params)
 
 Creates a new handle for connecting to this service.
 
@@ -659,27 +689,63 @@ Creates a new handle for connecting to this service.
 
 Creates a peer connection to another service.
 
-=item $self->try($cb)
+=item $res = $self->try($cb)
 
 Executes a callback with optional error interception.
 
-=item $self->peer_delta(%params)
+$res is a hashref:
+
+    {
+        ok => $bool,
+        err => $string,
+        out => ...,
+    }
+
+=item $delta = $self->peer_delta(%params)
 
 Returns a hashref showing changes in peer connections.
 
-=item $self->select_handles()
+=item @handles = $self->select_handles()
 
 Returns a list of filehandles for select().
 
-=item $self->watch($sig_seen)
+=item $activity = $self->watch($sig_seen)
 
 Waits for activity and returns an activity hashref.
 
-=item $self->run()
+See the L</"ACTIVITY HASH"> for a description of the C<$activity> output.
 
-Runs the main event loop until terminated.
+=item $terminated = $self->run()
+
+Runs the main event loop until terminated. Returns the termination value.
 
 =back
+
+=head1 ACTIVITY HASH
+
+The methods that take an activity hash get this structure:
+
+Note that all keys that are not applicable may be omitted.
+
+    {
+        # Set if the time interval has passed since the last iteration
+        interval => $bool,
+
+        # An arrayref of messages, if any
+        messages => \@messages,
+
+        # A hashref for peers that have been added or removed, -1 means removed, 1 means added.
+        peer_delta => {peer1 => -1, peer3 => 1},
+
+        # True if a wtached pid has exited
+        pid_watch => $bool,
+
+        # Hashref of all signals intercepted since the last iteration, plus a count of how many times they were recieved
+        sigs => {sig => $count, sig2 => $count2},
+
+        # Set if termination has occured, along with the termination value as a key on the hashref.
+        terminated => { value => $value },
+    }
 
 =head1 SOURCE
 

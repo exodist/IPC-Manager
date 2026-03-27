@@ -2,6 +2,8 @@ package IPC::Manager::Role::Service;
 use strict;
 use warnings;
 
+our $VERSION = '0.000006';
+
 # Not included in role:
 use Carp qw/croak/;
 use POSIX qw/:sys_wait_h/;

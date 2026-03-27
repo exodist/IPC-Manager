@@ -2,6 +2,8 @@ package IPC::Manager::Util;
 use strict;
 use warnings;
 
+our $VERSION = '0.000006';
+
 use Carp qw/croak/;
 use Errno qw/ESRCH/;
 

@@ -2,6 +2,8 @@ package IPC::Manager::Service::Handle;
 use strict;
 use warnings;
 
+our $VERSION = '0.000006';
+
 use Carp qw/croak/;
 use Time::HiRes qw/sleep time/;
 use Test2::Util::UUID qw/gen_uuid/;

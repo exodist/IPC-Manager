@@ -1,5 +1,7 @@
 {{$NEXT}}
 
+    - Skip postgresql tests on systems without initdb
+
 0.000008  2026-03-29 09:37:55-07:00 America/Los_Angeles
 
     - Remove leftover debugging

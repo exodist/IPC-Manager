@@ -110,16 +110,41 @@ sub workers {
     return $self->{_WORKERS};
 }
 
+sub terminate_workers {
+    my $self = shift;
+
+    my $workers = $self->{_WORKERS} or return;
+
+    $self->reap_workers(kill => 'TERM');
+
+    my $start = time;
+    while (keys %$workers) {
+        my $kill;
+        if (time - $start > 15) {
+            $kill = 'KILL';
+            $start = time;
+        }
+
+        $self->reap_workers(kill => $kill);
+    }
+}
+
 sub reap_workers {
     my $self = shift;
+    my %params = @_;
 
     my $workers = $self->{_WORKERS} or return;
 
     my %out;
     for my $pid (keys %$workers) {
         local $?;
-        my $check = waitpid($pid, WNOHANG) or next;
+        my $check = waitpid($pid, WNOHANG);
         my $exit = $?;
+
+        unless ($check) {
+            kill($pid, $params{kill}) if $params{kill};
+            next;
+        }
 
         my $name = delete $workers->{$pid};
 
@@ -204,13 +229,6 @@ sub in_correct_pid {
     my $self = shift;
     my $pid  = $self->pid;
     croak "Incorrect PID (did your fork leak? $$ vs $pid)" unless $$ == $pid;
-}
-
-sub kill {
-    my $self = shift;
-    my ($sig) = @_;
-    croak "A signal is required" unless defined $sig;
-    CORE::kill($sig, $self->pid);
 }
 
 sub debug {
@@ -430,6 +448,8 @@ sub run {
     }
 
     $self->_run_on_cleanup();
+
+    $self->terminate_workers();
 
     %SIG = %{$self->{_ORIG_SIG}};
 
@@ -674,10 +694,6 @@ Returns the client connection for this service.
 =item $self->in_correct_pid()
 
 Verifies we're running in the correct process. Dies if not.
-
-=item $self->kill($sig)
-
-Sends a signal to the service process.
 
 =item $self->debug(@msg)
 

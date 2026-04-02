@@ -131,6 +131,12 @@ BEGIN {
     *{$_} = $inject{$_} for keys %inject;
 }
 
+sub DESTROY {
+    my $self = shift;
+    local $?;
+    $self->terminate_workers;
+}
+
 1;
 
 __END__

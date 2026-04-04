@@ -53,6 +53,7 @@ sub have_ready_messages   { croak "Not Implemented" }
 sub have_handles_for_select { 0 }
 sub handles_for_select      { croak "Not Implemented" }
 
+sub suspend_supported             { 1 }
 sub have_handles_for_peer_change  { 0 }
 sub reset_handles_for_peer_change { croak "Not Implemented" }
 sub handles_for_peer_change       { croak "Not Implemented" }

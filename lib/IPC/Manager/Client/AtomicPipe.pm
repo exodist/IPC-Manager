@@ -16,7 +16,8 @@ use Object::HashBase qw{
     +pipe_cache
 };
 
-sub viable { eval { require Atomic::Pipe; 1 } || 0 }
+sub viable            { eval { require Atomic::Pipe; 1 } || 0 }
+sub suspend_supported { 0 }
 
 sub check_path { -p $_[1] }
 sub path_type  { 'FIFO' }

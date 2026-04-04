@@ -31,6 +31,7 @@ use Object::HashBase(
         pid
         use_posix_exit
         intercept_errors
+        expose_error_details
         watch_pids
 
         <interval
@@ -58,7 +59,8 @@ sub init {
     $self->{+CYCLE}            //= $self->IPC::Manager::Role::Service::cycle();
     $self->{+INTERVAL}         //= $self->IPC::Manager::Role::Service::interval();
     $self->{+USE_POSIX_EXIT}   //= $self->IPC::Manager::Role::Service::use_posix_exit();
-    $self->{+INTERCEPT_ERRORS} //= $self->IPC::Manager::Role::Service::intercept_errors();
+    $self->{+INTERCEPT_ERRORS}      //= $self->IPC::Manager::Role::Service::intercept_errors();
+    $self->{+EXPOSE_ERROR_DETAILS}  //= $self->IPC::Manager::Role::Service::expose_error_details();
 
     if ($self->{+ON_ALL}) {
         $self->{+HANDLE_REQUEST}  //= sub { return () };
@@ -201,6 +203,13 @@ Boolean indicating whether to use POSIX exit codes.
 =item intercept_errors
 
 Boolean indicating whether to intercept and log errors.
+
+=item expose_error_details
+
+Boolean indicating whether exception text from C<handle_request> should be
+included verbatim in error responses.  When false (the default), a generic
+C<"Internal service error"> message is sent.  When true, the stringified
+exception is sent as the C<ipcm_error> value in the response.
 
 =item watch_pids
 

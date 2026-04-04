@@ -34,10 +34,11 @@ requires qw{
     handle_request
 };
 
-sub cycle            { 0.2 }
-sub interval         { 0.2 }
-sub use_posix_exit   { 0 }
-sub intercept_errors { 0 }
+sub cycle                { 0.2 }
+sub interval             { 0.2 }
+sub use_posix_exit       { 0 }
+sub intercept_errors     { 0 }
+sub expose_error_details { 0 }
 
 sub terminated    { $_[0]->{_TERMINATED} }
 sub is_terminated { defined $_[0]->{_TERMINATED} ? 1 : 0 }
@@ -189,15 +190,16 @@ sub run_on_response_message {
 
 sub send_response {
     my $self = shift;
-    my ($peer, $id, $resp) = @_;
+    my ($peer, $id, $resp, $error) = @_;
 
-    $self->client->send_message(
-        $peer,
-        {
-            ipcm_response_id => $id,
-            response         => $resp,
-        }
+    my %payload = (
+        ipcm_response_id => $id,
+        response         => $resp,
     );
+
+    $payload{ipcm_error} = $error if defined $error;
+
+    $self->client->send_message($peer, \%payload);
 }
 
 sub run_on_request_message {
@@ -205,12 +207,24 @@ sub run_on_request_message {
     my ($msg) = @_;
 
     my $peer = $msg->from;
-
     my $req  = $msg->content;
 
     # return empty list to not send a response yet.
     # return one item (can be undef, 0, '', or any other value)
-    my @resp = $self->handle_request($req, $msg);
+    my (@resp, $err);
+    {
+        local $@;
+        eval { @resp = $self->handle_request($req, $msg); 1 } or $err = $@ || "There was an error: $@";
+    }
+
+    if (defined $err) {
+        my $error_message = $self->expose_error_details
+            ? "$err"
+            : "Internal service error";
+
+        $self->send_response($peer, $req->{ipcm_request_id}, undef, $error_message);
+        return;
+    }
 
     return unless @resp;
     croak "Incorrect number of responses to request" if @resp != 1;
@@ -589,6 +603,13 @@ Returns whether to use POSIX exit codes (default: 0).
 
 Returns whether to intercept and log errors (default: 0).
 
+=item $self->expose_error_details()
+
+Returns whether exception text from C<handle_request> should be included in
+error responses.  When false (the default), a generic C<"Internal service
+error"> message is sent.  When true, the stringified exception is sent as the
+C<ipcm_error> value.
+
 =item $val = $self->terminated()
 
 Gets the termination status.
@@ -686,7 +707,10 @@ Reaps terminated worker processes. Returns a hashref of results.
 
 =item $self->send_response($peer, $id, $resp)
 
-Sends a response message to a peer.
+=item $self->send_response($peer, $id, $resp, $error)
+
+Sends a response message to a peer.  If C<$error> is provided, the response
+payload includes an C<ipcm_error> key with the error string.
 
 =item $client = $self->client()
 

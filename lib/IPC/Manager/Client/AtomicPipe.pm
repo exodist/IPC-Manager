@@ -149,9 +149,29 @@ single-reader use of the pipe.
 
     my @messages = $con2->get_messages;
 
+=head1 CONSTRUCTOR PARAMETERS
+
+=over 4
+
+=item permissions => $octal
+
+File permission bits used when creating the FIFO.  Defaults to C<0700>.
+
+=back
+
 =head1 METHODS
 
-See L<IPC::Manager::Client>.
+See L<IPC::Manager::Client> and L<IPC::Manager::Base::FS> for inherited methods.
+
+=over 4
+
+=item $con->pre_suspend_hook
+
+Before suspending, drains any messages still buffered in the pipe and writes
+them to the resume file so they are not lost across the suspend/reconnect
+cycle.
+
+=back
 
 =head1 SOURCE
 

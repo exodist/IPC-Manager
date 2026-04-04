@@ -207,7 +207,29 @@ is a file added to the client subdirectories.
 
 =head1 METHODS
 
-See L<IPC::Manager::Client>.
+See L<IPC::Manager::Client> and L<IPC::Manager::Base::FS> for inherited methods.
+
+=over 4
+
+=item $inotify = $con->inotify
+
+Returns the L<Linux::Inotify2> instance watching the client's message
+directory for newly created message files.  Created on first call.  Dies
+unless L<Linux::Inotify2> is available.
+
+=item $arrayref_or_undef = $con->message_files($ext)
+
+Scans the client's message directory and returns an arrayref of filenames
+matching C<.ready> (when C<$ext> is C<'ready'>) or C<.pend> (when C<$ext>
+is C<'pend'>), or undef if there are none.  As a side-effect, updates the
+internal C<pend_count> and C<ready_count> caches.
+
+=item $dirhandle = $con->dir_handle
+
+Returns a cached, rewound directory handle for the client's message
+directory.  Opens the directory on first call.
+
+=back
 
 =head1 SOURCE
 

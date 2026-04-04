@@ -469,6 +469,43 @@ returns a boolean and if it is false it sets $@ to the error message.
 Write the C<< $con->stats >> data to the data store so that
 C<< $con->read_stats >> can read it.
 
+=item $bool = $con->viable
+
+Returns true if this protocol is usable in the current environment, i.e. all
+required modules are loadable and any runtime prerequisites (kernel features,
+available file types, etc.) are satisfied.  Always check C<viable> before
+calling C<spawn> with a protocol you have not explicitly required.
+
+=item $bool = $con->have_handles_for_select
+
+Returns true if this client provides filehandles that can be passed to
+C<IO::Select> to wait for incoming messages.  Returns false by default;
+protocols that support it override this to return true.
+
+=item @handles = $con->handles_for_select
+
+Returns the list of filehandles to register with C<IO::Select> for incoming
+message notification.  Only valid when C<have_handles_for_select> returns
+true.
+
+=item $bool = $con->have_handles_for_peer_change
+
+Returns true if this client can supply a filehandle that becomes readable
+whenever the set of connected peers changes (e.g. a new client connects or an
+existing one disconnects).  Returns false by default.
+
+=item $con->reset_handles_for_peer_change
+
+Drains or resets the peer-change notification handle after a peer-change
+event has been processed, so that it does not remain spuriously readable.
+Only valid when C<have_handles_for_peer_change> returns true.
+
+=item @handles = $con->handles_for_peer_change
+
+Returns the filehandle(s) that become readable on a peer-connect or
+peer-disconnect event.  Only valid when C<have_handles_for_peer_change>
+returns true.
+
 =back
 
 =head1 SOURCE

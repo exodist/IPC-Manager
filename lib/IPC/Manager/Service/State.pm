@@ -233,3 +233,110 @@ sub _ipcm_service {
 }
 
 1;
+
+__END__
+
+=pod
+
+=encoding UTF-8
+
+=head1 NAME
+
+IPC::Manager::Service::State - Internal implementation of ipcm_service and ipcm_worker
+
+=head1 DESCRIPTION
+
+This module is the implementation backing the C<ipcm_service> and
+C<ipcm_worker> exports provided by L<IPC::Manager>.  It also acts as its
+own C<-M> boot module when a service is started via C<exec>: in that case
+Perl loads this module with C<-MIPC::Manager::Service::State>, which reads
+the serialised service parameters from C<@ARGV> and arranges for the service
+to start running once the Perl runtime exits C<BEGIN>.
+
+Callers should interact with this module only through the exports of
+L<IPC::Manager>; direct use is not part of the public API.
+
+=head1 EXPORTS
+
+These functions are re-exported through L<IPC::Manager>; see that module for
+the primary documentation.
+
+=over 4
+
+=item $handle = ipcm_service($name, \&on_all_callback)
+
+=item $handle = ipcm_service($name, \%params, \&on_all_callback)
+
+=item $handle = ipcm_service($name, %params)
+
+Fork a new service process.  The return value depends on calling context and
+where the call is made:
+
+=over 4
+
+=item *
+
+When called outside a service, returns an
+L<IPC::Manager::Service::Handle> connected to a newly spawned IPC bus.
+C<ipcm_service> blocks until the service signals that it is ready.
+
+=item *
+
+When called from B<inside> a running service (from a service callback), the
+new service shares the existing IPC bus.  Returns an
+L<IPC::Manager::Service::Peer> that the calling service can use to send
+requests to the nested service.  C<ipcm_service> blocks until the nested
+service is ready.
+
+=item *
+
+When called in B<void context> from inside a service, the nested service is
+started but C<ipcm_service> returns immediately without waiting for the
+service to be ready.  The caller is responsible for waiting before sending
+messages; see L<IPC::Manager/ipcm_service> for details.
+
+=back
+
+=item $pid = ipcm_worker($name, \&callback)
+
+Fork a worker process from inside a running service.  The worker runs
+C<\&callback> in place of a normal service loop and is registered with the
+parent service so that it is reaped when the service exits.  Dies if called
+outside a service.
+
+Returns the PID of the newly forked worker to the parent; in the worker
+process the callback is invoked and the function never returns.
+
+=back
+
+=head1 SOURCE
+
+The source code repository for IPC::Manager can be found at
+L<https://github.com/exodist/IPC-Manager>.
+
+=head1 MAINTAINERS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 AUTHORS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright Chad Granum E<lt>exodist7@gmail.comE<gt>.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+See L<https://dev.perl.org/licenses/>
+
+=cut

@@ -335,6 +335,47 @@ is protocol specific, it may be a file, a directory, a DBI DSN string, etc.
 Same as 'connect', but used to reconnect as a client that was suspended or
 otherwise disconnected.
 
+=item $peer = ipcm_service($name => \&callback)
+
+=item $peer = ipcm_service($name, \%params, \&callback)
+
+=item $peer = ipcm_service($name, %params)
+
+Forks a new service process. When called from outside a service the return
+value is an L<IPC::Manager::Service::Handle> connected to the new service over
+a freshly spawned IPC bus.
+
+When called from B<inside> a running service (i.e. from within a service
+callback) the new service shares the existing IPC bus, and the return value is
+an L<IPC::Manager::Service::Peer> that the calling service can use to send
+requests to the nested service.
+
+B<Void context and the ready race>: when called in void context from inside a
+service, C<ipcm_service> forks the nested service and returns immediately
+without waiting for it to finish connecting to the bus. If you intend to
+contact the nested service shortly after (e.g. from C<handle_request>), you
+must wait for it yourself before returning from the enclosing callback:
+
+    on_start => sub {
+        ipcm_service nested => sub { ... };   # void context - no wait
+        sleep 0.025 until $self->peer('nested')->ready;
+    },
+
+Failing to do so is a race condition: a request may be forwarded to the nested
+service before it has connected, causing the caller to stall indefinitely.
+
+=item $pid = ipcm_worker($name, \&callback)
+
+Fork a named worker process from B<inside> a running service.  Dies if called
+outside a service.
+
+The worker runs C<\&callback> instead of a normal service event loop.  It is
+registered with the enclosing service so that it is automatically reaped when
+the service exits.
+
+Returns the worker PID to the caller (the parent service process); the
+callback is entered in the forked child and the function never returns there.
+
 =back
 
 =head1 CLIENT PROTOCOLS

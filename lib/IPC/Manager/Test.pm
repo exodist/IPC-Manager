@@ -243,3 +243,116 @@ sub test_generic {
 1;
 
 __END__
+
+=pod
+
+=encoding UTF-8
+
+=head1 NAME
+
+IPC::Manager::Test - Reusable protocol-agnostic test suite for IPC::Manager
+
+=head1 DESCRIPTION
+
+This module provides a set of standard tests that verify the correctness of
+an L<IPC::Manager> protocol implementation.  Each test is an ordinary method
+whose name begins with C<test_>; they are discovered automatically by
+C<tests()> and executed by C<run_all()>.
+
+Protocol test files typically look like:
+
+    use Test2::V1 -ipP;
+    use Test2::IPC;
+    use IPC::Manager::Test;
+    IPC::Manager::Test->run_all(protocol => 'AtomicPipe');
+    done_testing;
+
+=head1 METHODS
+
+=over 4
+
+=item IPC::Manager::Test->run_all(protocol => $PROTOCOL)
+
+Run every C<test_*> method as an isolated subtest.  Each test is forked into
+its own process so that failures and resource leaks cannot affect sibling
+tests.  C<protocol> is required and is set as the default protocol via
+C<ipcm_default_protocol> before any test runs.
+
+=item @names = IPC::Manager::Test->tests
+
+Returns a sorted list of all C<test_*> method names defined on the class (or
+a subclass).  Used internally by C<run_all>.
+
+=item IPC::Manager::Test->test_generic
+
+Tests the low-level IPC bus: spawning a store, connecting multiple clients,
+sending point-to-point and broadcast messages, verifying message contents and
+ordering, and checking that per-client statistics are accurate on disconnect.
+
+=item IPC::Manager::Test->test_simple_service
+
+Tests C<ipcm_service> at the single-service level: starts a named service,
+sends a request to it from the parent process, verifies the service echoes a
+response back with the correct content, and confirms that both sides observed
+the exchange.
+
+=item IPC::Manager::Test->test_nested_services
+
+Tests the nested-service code path where C<ipcm_service> is called from
+B<inside> a running service.  An outer service starts an inner service during
+its C<on_start> callback, then acts as a transparent proxy: each request
+received from the test process is forwarded to the inner service, and the
+inner service's response is returned to the caller with an identifying prefix.
+The test verifies the full two-hop request/response chain.
+
+=item IPC::Manager::Test->test_exec_service
+
+Tests the C<exec> code path of C<ipcm_service>.  Instead of running the
+service in a forked child, the child calls C<exec()> to start a fresh Perl
+interpreter that loads L<IPC::Manager::Service::State> and deserialises the
+service parameters from C<@ARGV>.  The test starts
+L<IPC::Manager::Test::EchoService> via exec, sends a request, and verifies
+the echoed response.
+
+=item IPC::Manager::Test->test_workers
+
+Tests the C<ipcm_worker> facility.  A service spawns two workers during
+C<on_start>: a short-lived worker that writes a marker file and exits, and a
+long-lived worker that sleeps indefinitely.  The test verifies that both
+workers run, that the service tracks them via C<workers()>, and that
+C<terminate_workers()> kills the long-lived worker when the service shuts
+down.
+
+=back
+
+=head1 SOURCE
+
+The source code repository for IPC::Manager can be found at
+L<https://github.com/exodist/IPC-Manager>.
+
+=head1 MAINTAINERS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 AUTHORS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright Chad Granum E<lt>exodist7@gmail.comE<gt>.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+See L<https://dev.perl.org/licenses/>
+
+=cut

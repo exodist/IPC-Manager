@@ -344,6 +344,32 @@ Get the stats file for the connection.
 
 Write the pidfile for the connection.
 
+=item $bool = $con->can_select
+
+Returns true if C<IO::Select> is available and this client can use it for
+non-blocking message detection.
+
+=item $select = $con->select
+
+Returns a cached L<IO::Select> object populated with the client's
+C<handles_for_select>.  Creates the object on first call.  Returns undef if
+C<can_select> is false or there are no handles to monitor.
+
+=item $bool = $con->have_handles_for_peer_change
+
+Returns true if L<Linux::Inotify2> is available and can be used to watch the
+route directory for new peer connections.
+
+=item $con->reset_handles_for_peer_change
+
+Drains pending inotify events after a peer-change notification so that the
+handle does not remain spuriously readable.
+
+=item @handles = $con->handles_for_peer_change
+
+Returns the inotify filehandle watching the route directory for peer arrivals
+and departures.  Dies unless L<Linux::Inotify2> is available.
+
 =back
 
 =head1 SOURCE

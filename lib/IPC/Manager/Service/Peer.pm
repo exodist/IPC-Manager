@@ -1,4 +1,4 @@
-package IPC::Manager::ServicePeer;
+package IPC::Manager::Service::Peer;
 use strict;
 use warnings;
 

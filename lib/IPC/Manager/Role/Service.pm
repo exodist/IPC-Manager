@@ -126,6 +126,7 @@ sub terminate_workers {
         }
 
         $self->reap_workers(kill => $kill);
+        sleep 0.05 if keys %$workers;
     }
 }
 
@@ -142,7 +143,7 @@ sub reap_workers {
         my $exit = $?;
 
         unless ($check) {
-            kill($pid, $params{kill}) if $params{kill};
+            kill($params{kill}, $pid) if $params{kill};
             next;
         }
 

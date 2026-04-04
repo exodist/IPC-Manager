@@ -137,6 +137,10 @@ sub init {
         $self->make_path($path);
     }
 
+    # Prime the peer-change inotify watch now that the route directory
+    # exists, so events are captured from the start.
+    $self->handles_for_peer_change if USE_INOTIFY();
+
     $self->write_pid;
 }
 
@@ -151,9 +155,11 @@ sub write_pid {
     my $self = shift;
 
     my $pidfile = $self->pidfile;
-    open(my $fh, '>', $pidfile) or die "Could not open pidfile '$pidfile': $!";
+    my $pend = $pidfile . ".pend";
+    open(my $fh, '>', $pend) or die "Could not open pidfile '$pend': $!";
     print $fh $self->{+PID};
     close($fh);
+    rename($pend, $pidfile) or die "Could not rename file '$pend' -> '$pidfile': $!";
 }
 
 sub requeue_message {

@@ -28,7 +28,8 @@ sub import {
         stdin  => clone_io('<&', \*STDIN),
     };
 
-    my $new_inst = $class->new(%$params);
+    my $svc_class = require_mod($params->{class} // 'IPC::Manager::Service');
+    my $new_inst = $svc_class->new(%$params);
 
     my $exit;
     my $code = sub { _ipcm_service(%$params, new_inst => $new_inst); $exit = 0 };
@@ -79,7 +80,7 @@ sub ipcm_service {
         $params{on_all} = $args[1];
     }
     else {
-        %params = @_;
+        %params = @args;
     }
 
     my $skip_role_checks = delete $params{skip_role_checks};
@@ -143,7 +144,7 @@ sub ipcm_service {
         my $out;
 
         if (delete $handle_params->{_peer}) {
-            $out = $new_inst->peer($params{name}, %$handle_params);
+            $out = $service_inst->peer($params{name}, %$handle_params);
         }
         else {
             $out = $new_inst->handle(%$handle_params, name => "service_parent_$$");
@@ -181,7 +182,7 @@ sub ipcm_service {
     goto \&_ipcm_service;
 }
 
-sub _post_exec_run { }
+sub _post_exec_run { $_post_exec_run->() }
 
 sub _ipcm_service {
     my %params = @_;
@@ -212,6 +213,8 @@ sub _ipcm_service {
         # Get a copy to work with, the $service_inst can be replaced before this block exits.
         my $using_service = $service_inst;
 
+        my $do_posix_exit = ref($using_service) ne 'CODE' && $using_service->use_posix_exit;
+
         eval {
             if (ref($using_service) eq 'CODE') {
                 my $exit = $using_service->();
@@ -219,12 +222,12 @@ sub _ipcm_service {
             }
             else {
                 my $exit = $using_service->run() // 0;
-                $using_service->use_posix_exit ? POSIX::_exit($exit) : exit($exit);
+                $do_posix_exit ? POSIX::_exit($exit) : exit($exit);
             }
             1;
         } or warn $@;
 
-        POSIX::_exit(255);
+        $do_posix_exit ? POSIX::_exit(255) : exit(255);
     }
 
     # This should not be reachable....

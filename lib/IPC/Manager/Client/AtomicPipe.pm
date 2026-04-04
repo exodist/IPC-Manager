@@ -71,8 +71,9 @@ sub pre_suspend_hook {
 
 sub fill_buffer {
     my $self = shift;
-    push @{$self->{+BUFFER}} => $self->{+PIPE}->read_message;
-    return @{$self->{+BUFFER}} ? 1 : 0;
+    my $msg = $self->{+PIPE}->read_message // return @{$self->{+BUFFER}} ? 1 : 0;
+    push @{$self->{+BUFFER}} => $msg;
+    return 1;
 }
 
 sub _process_msg {

@@ -6,6 +6,8 @@ our $VERSION = '0.000011';
 
 use parent 'IPC::Manager::Serializer';
 
+our $JSON;
+
 BEGIN {
     local $@;
     my $class;
@@ -15,13 +17,11 @@ BEGIN {
 
     die "Could not find 'Cpanel::JSON::XS', 'JSON::XS', or 'JSON::PP'" unless $class;
 
-    my $json = $class->new->ascii(1)->convert_blessed(1)->allow_nonref(1);
-
-    *JSON = sub() { $json };
+    $JSON = $class->new->ascii(1)->convert_blessed(1)->allow_nonref(1);
 }
 
-sub serialize   { JSON()->encode($_[1]) }
-sub deserialize { JSON()->decode($_[1]) }
+sub serialize   { $JSON->encode($_[1]) }
+sub deserialize { $JSON->decode($_[1]) }
 
 1;
 

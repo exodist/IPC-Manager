@@ -1,5 +1,7 @@
 {{$NEXT}}
 
+    - Yikes, put them back, DBI and UnixSocket are harder to maintain seperate.
+
 0.000010  2026-04-01 16:34:06-07:00 America/Los_Angeles
 
     - Break DBI and UnixSocket clients into their own dists

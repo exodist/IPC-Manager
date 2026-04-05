@@ -20,7 +20,7 @@ sub viable {
         require DBD::mysql;
         DBD::mysql->VERSION('4.00');
         require DBIx::QuickDB;
-        DBIx::QuickDB->VERSION('0.000038');
+        DBIx::QuickDB->VERSION('0.000040');
         DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::MySQL', {});
         1;
     } || 0;

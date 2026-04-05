@@ -20,7 +20,7 @@ sub viable {
         require DBD::MariaDB;
         DBD::MariaDB->VERSION('1.00');
         require DBIx::QuickDB;
-        DBIx::QuickDB->VERSION('0.000038');
+        DBIx::QuickDB->VERSION('0.000040');
         DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::MariaDB', {});
         1;
     } || 0;

@@ -13,7 +13,7 @@ sub viable {
     local $@;
     eval {
         require DBIx::QuickDB;
-        DBIx::QuickDB->VERSION('0.000038');
+        DBIx::QuickDB->VERSION('0.000040');
         DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::SQLite', {});
         1;
     } || 0;

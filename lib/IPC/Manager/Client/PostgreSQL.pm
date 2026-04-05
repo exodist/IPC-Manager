@@ -7,7 +7,7 @@ our $VERSION = '0.000011';
 use Carp qw/croak/;
 use File::Temp qw/tempdir/;
 
-use DBI;
+use DBI 1.644;
 
 use parent 'IPC::Manager::Base::DBI';
 use Object::HashBase qw{
@@ -15,15 +15,23 @@ use Object::HashBase qw{
 };
 
 sub viable {
-    my $driver = 'DBIx::QuickDB::Driver::MySQL';
+    local $@;
     eval {
+        require DBD::Pg;
+        DBD::Pg->VERSION('3.5.0');
         require DBIx::QuickDB;
-        my ($v) = DBIx::QuickDB->check_driver($driver, {});
-        return $v;
-    };
+        DBIx::QuickDB->VERSION('0.000038');
+        DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::PostgreSQL', {});
+        1;
+    } || 0;
 }
 
 sub escape { '"' }
+
+sub blob_type {
+    require DBD::Pg;
+    return { pg_type => DBD::Pg::PG_BYTEA() };
+}
 
 sub dsn { $_[0]->{+ROUTE} }
 

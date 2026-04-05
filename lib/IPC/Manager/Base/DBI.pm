@@ -9,7 +9,7 @@ use Scalar::Util qw/blessed/;
 use Time::HiRes qw/time/;
 use File::Temp qw/tempfile/;
 
-use DBI;
+use DBI 1.644;
 
 use parent 'IPC::Manager::Client';
 use Object::HashBase qw{
@@ -22,7 +22,8 @@ use Object::HashBase qw{
 sub dsn       { croak "Not Implemented" }
 sub table_sql { croak "Not Implemented" }
 
-sub escape { '' }
+sub escape    { '' }
+sub blob_type { DBI::SQL_BLOB }
 
 sub pending_messages { 0 }
 sub ready_messages   { $_[0]->_get_message_ids ? 1 : 0 }
@@ -87,10 +88,15 @@ sub init {
 
     my $row = $self->_get_peer($self->{+ID});
 
-    croak "The '$id' peer does not exist" if $self->{+RECONNECT} && !$row;
+    if ($self->{+RECONNECT} && !$row) {
+        $self->{disconnected} = 1;
+        croak "The '$id' peer does not exist";
+    }
 
-    croak "Looks like the connection is already running in pid $row->{pid}"
-        if $row && $row->{pid} && $self->pid_is_running($row->{pid});
+    if ($row && $row->{pid} && $self->pid_is_running($row->{pid})) {
+        $self->{disconnected} = 1;
+        croak "Looks like the connection is already running in pid $row->{pid}";
+    }
 
     my $dbh = $self->dbh;
     my $e   = $self->escape;
@@ -128,7 +134,9 @@ sub write_stats {
     my $dbh = $self->dbh;
     my $e   = $self->escape;
     my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}stats${e} = ? WHERE ${e}id${e} = ?") or die $dbh->errstr;
-    $sth->execute($self->{+SERIALIZER}->serialize($self->{+STATS}), $self->{+ID}) or die $dbh->errstr;
+    $sth->bind_param(1, $self->{+SERIALIZER}->serialize($self->{+STATS}), $self->blob_type);
+    $sth->bind_param(2, $self->{+ID});
+    $sth->execute or die $dbh->errstr;
 }
 
 sub read_stats {
@@ -184,16 +192,22 @@ sub send_message {
     my $self = shift;
     my $msg = $self->build_message(@_);
 
+    my $peer_id = $msg->to or croak "Message has no peer";
+    croak "Client '$peer_id' does not exist" unless $self->peer_exists($peer_id);
+
     my $dbh = $self->dbh;
     my $e   = $self->escape;
     my $sth = $dbh->prepare("INSERT INTO ipcm_messages(${e}id${e}, ${e}from${e}, ${e}to${e}, ${e}stamp${e}, ${e}broadcast${e}, ${e}content${e}) VALUES (?, ?, ?, ?, ?, ?)")
         or die $dbh->errstr;
 
-    $sth->execute(
-        @{$msg}{qw/id from to stamp/},
-        ($msg->{broadcast} ? 1 : 0),
-        $self->{+SERIALIZER}->serialize($msg->{content}),
-    ) or die $dbh->errstr;
+    my $content = $self->{+SERIALIZER}->serialize($msg->{content});
+    $sth->bind_param(1, $msg->{id});
+    $sth->bind_param(2, $msg->{from});
+    $sth->bind_param(3, $msg->{to});
+    $sth->bind_param(4, $msg->{stamp});
+    $sth->bind_param(5, $msg->{broadcast} ? 1 : 0);
+    $sth->bind_param(6, $content, $self->blob_type);
+    $sth->execute or die $dbh->errstr;
 
     $self->{+STATS}->{sent}->{$msg->{to}}++;
 }
@@ -217,7 +231,7 @@ sub get_messages {
 
     my $e     = $self->escape;
     my $where = "FROM ipcm_messages WHERE ${e}id${e} IN (" . join(', ' => map { '?' } 1 .. scalar(@$ids)) . ")";
-    my $sth   = $dbh->prepare("SELECT * $where") or die $dbh->errstr;
+    my $sth   = $dbh->prepare("SELECT * $where ORDER BY ${e}stamp${e} ASC") or die $dbh->errstr;
     $sth->execute(@$ids) or die $dbh->errstr;
     my $rows = $sth->fetchall_arrayref({});
 

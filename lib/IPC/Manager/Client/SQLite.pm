@@ -7,15 +7,16 @@ our $VERSION = '0.000011';
 use Carp qw/croak/;
 use File::Temp qw/tempfile/;
 
-use DBI;
+use DBI 1.644;
 
 sub viable {
-    my $driver = 'DBIx::QuickDB::Driver::SQLite';
+    local $@;
     eval {
         require DBIx::QuickDB;
-        my ($v) = DBIx::QuickDB->check_driver($driver, {});
-        return $v;
-    };
+        DBIx::QuickDB->VERSION('0.000038');
+        DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::SQLite', {});
+        1;
+    } || 0;
 }
 
 use parent 'IPC::Manager::Base::DBI';
@@ -31,7 +32,7 @@ sub table_sql {
             CREATE TABLE IF NOT EXISTS ipcm_peers(
                 `id`        CHAR(36)        NOT NULL PRIMARY KEY,
                 `pid`       INTEGER         DEFAULT NULL,
-                `active`    BIGINT          DEFAULT (strftime('%s', 'now')),
+                `active`    REAL            DEFAULT (strftime('%s', 'now')),
                 `stats`     BLOB            DEFAULT NULL
             );
         EOT
@@ -40,7 +41,7 @@ sub table_sql {
                 `id`        UUID            NOT NULL PRIMARY KEY,
                 `to`        CHAR(36)        NOT NULL REFERENCES ipcm_peers(id) ON DELETE CASCADE,
                 `from`      CHAR(36)        NOT NULL REFERENCES ipcm_peers(id) ON DELETE CASCADE,
-                `stamp`     BIGINT          NOT NULL,
+                `stamp`     REAL            NOT NULL,
                 `content`   BLOB            NOT NULL,
                 `broadcast` BOOL            NOT NULL DEFAULT FALSE
             );

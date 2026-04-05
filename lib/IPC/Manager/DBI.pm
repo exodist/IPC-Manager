@@ -14,7 +14,7 @@ __END__
 
 =head1 NAME
 
-IPC::Manager:DBI - Database based clients for L<IPC::Manager>.
+IPC::Manager::DBI - Database based clients for L<IPC::Manager>.
 
 =head1 DESCRIPTION
 

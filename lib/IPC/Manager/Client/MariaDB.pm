@@ -7,7 +7,7 @@ our $VERSION = '0.000011';
 use Carp qw/croak/;
 use File::Temp qw/tempdir/;
 
-use DBI;
+use DBI 1.644;
 
 use parent 'IPC::Manager::Base::DBI';
 use Object::HashBase qw{
@@ -15,15 +15,19 @@ use Object::HashBase qw{
 };
 
 sub viable {
-    my $driver = 'DBIx::QuickDB::Driver::MariaDB';
+    local $@;
     eval {
+        require DBD::MariaDB;
+        DBD::MariaDB->VERSION('1.00');
         require DBIx::QuickDB;
-        my ($v) = DBIx::QuickDB->check_driver($driver, {});
-        return $v;
-    };
+        DBIx::QuickDB->VERSION('0.000038');
+        DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::MariaDB', {});
+        1;
+    } || 0;
 }
 
-sub dsn { $_[0]->{+ROUTE} }
+sub dsn       { $_[0]->{+ROUTE} }
+sub blob_type { DBI::SQL_BINARY }
 
 sub escape { '`' }
 

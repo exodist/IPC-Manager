@@ -7,7 +7,7 @@ our $VERSION = '0.000011';
 use File::Spec;
 use Carp qw/croak/;
 use POSIX qw/mkfifo/;
-use IO::Socket::UNIX qw/SOCK_DGRAM/;
+use IO::Socket::UNIX 1.55 qw/SOCK_DGRAM/;
 
 use parent 'IPC::Manager::Base::FS::Handle';
 use Object::HashBase qw{
@@ -16,7 +16,7 @@ use Object::HashBase qw{
     +socket_cache
 };
 
-sub viable { eval { require IO::Socket::UNIX; 1 } || 0 }
+sub viable { local $@; eval { require IO::Socket::UNIX; IO::Socket::UNIX->VERSION('1.55'); 1 } || 0 }
 
 sub check_path { -S $_[1] }
 sub path_type  { 'UNIX Socket' }
@@ -24,6 +24,7 @@ sub path_type  { 'UNIX Socket' }
 sub have_handles_for_select { 1 }
 sub handles_for_select { $_[0]->{+SOCKET} }
 
+sub suspend_supported { 0 }
 sub suspend { croak "suspend is not supported by the UnixSocket driver" }
 
 sub make_path {

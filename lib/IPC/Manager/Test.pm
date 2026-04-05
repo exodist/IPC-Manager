@@ -29,7 +29,7 @@ sub run_all {
         my $ok  = eval { subtest $test => $class->can($test); 1 };
         my $err = $@;
         warn $err unless $ok;
-        POSIX::_exit($ok ? 0 : 255);
+        exit($ok ? 0 : 255);
     }
 }
 
@@ -338,7 +338,7 @@ sub test_exec_service {
     my $got_resp = 0;
     my $handle = ipcm_service(
         'exec_svc',
-        class => 'IPC::Manager::Test::EchoService',
+        class => 'IPC::Manager::Service::Echo',
         exec  => {cmd => \@inc_flags},
     );
 
@@ -917,7 +917,6 @@ sub test_watch_pids {
     my $marker_dir = File::Temp::tempdir(CLEANUP => 1);
     my $cleanup_file = File::Spec->catfile($marker_dir, 'wp_cleanup');
     my $ready_file   = File::Spec->catfile($marker_dir, 'wp_ready');
-    my $route_file   = File::Spec->catfile($marker_dir, 'wp_route');
 
     # Fork a child that acts as the watched process.  It starts the service
     # with watch_pids pointing at itself, verifies the service works, then
@@ -943,21 +942,13 @@ sub test_watch_pids {
         );
 
         my $resp = $handle->sync_request(wp_svc => 'ping');
-        # Signal parent we are ready, and share the spawn info so the
-        # parent can clean up the IPC temp files after the service exits.
+        # Signal parent we are ready
         open my $fh, '>', $ready_file or die "open: $!";
         print $fh "$resp->{response}\n";
         close $fh;
 
-        if (my $spawn = $handle->{spawn}) {
-            open my $rfh, '>', $route_file or die "open: $!";
-            print $rfh $spawn->info, "\n";
-            close $rfh;
-            $spawn->{guard} = 0;    # prevent DESTROY from running shutdown
-        }
-
         # Exit — the service watches our pid and should terminate
-        POSIX::_exit(0);
+        exit(0);
     }
 
     # Wait for child to signal readiness
@@ -985,18 +976,6 @@ sub test_watch_pids {
         $waited += 0.1;
     }
     ok(-e $cleanup_file, "Service exited after watched pid terminated");
-
-    # Clean up the IPC temp files that the child could not remove (it used
-    # POSIX::_exit which skips DESTROY).
-    if (-e $route_file) {
-        open my $rfh, '<', $route_file or die "open: $!";
-        chomp(my $info = <$rfh>);
-        close $rfh;
-        my $parts = IPC::Manager::Serializer::JSON->deserialize($info);
-        my $proto = $parts->[0];
-        my $route = $parts->[2];
-        $proto->unspawn($route);
-    }
 }
 
 sub test_spawn_terminate_with_signal {
@@ -1070,7 +1049,7 @@ sub test_cleave {
     else {
         # Child (new owner) — just exit.  Don't unspawn; the parent
         # still needs the route to verify the bus works.
-        POSIX::_exit(0);
+        exit(0);
     }
 }
 
@@ -1200,7 +1179,7 @@ Tests the C<exec> code path of C<ipcm_service>.  Instead of running the
 service in a forked child, the child calls C<exec()> to start a fresh Perl
 interpreter that loads L<IPC::Manager::Service::State> and deserialises the
 service parameters from C<@ARGV>.  The test starts
-L<IPC::Manager::Test::EchoService> via exec, sends a request, and verifies
+L<IPC::Manager::Service::Echo> via exec, sends a request, and verifies
 the echoed response.
 
 =item IPC::Manager::Test->test_workers

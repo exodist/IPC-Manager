@@ -1,13 +1,11 @@
 use Test2::V0;
 use Test2::IPC;
 
-use lib 't/lib';
-
-use IPC::Manager::Client::InMemory;
+use IPC::Manager::Client::LocalMemory;
 use IPC::Manager::Serializer::JSON;
 
 my $SERIALIZER = 'IPC::Manager::Serializer::JSON';
-my $PROTOCOL   = 'IPC::Manager::Client::InMemory';
+my $PROTOCOL   = 'IPC::Manager::Client::LocalMemory';
 
 # Create a minimal class that consumes the role
 {

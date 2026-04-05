@@ -222,7 +222,7 @@ sub DESTROY {
     return unless $self->{+PID} && $self->{+PID} == $$;
     local $@;
     eval { $self->disconnect;  1 } or warn $@;
-    eval { $self->write_stats; 1 } or warn $@;
+    eval { $self->write_stats; 1 } or warn $@ unless $self->{+DISCONNECTED};
 }
 
 1;

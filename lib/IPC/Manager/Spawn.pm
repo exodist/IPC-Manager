@@ -90,7 +90,9 @@ sub terminate {
     # before the terminate message arrives and ends the event loop.
     if ($self->{+SIGNAL()}) {
         for my $peer ($con->peers) {
-            my $pid = eval { $con->peer_pid($peer) } or next;
+            my $pid;
+            unless (eval { $pid = $con->peer_pid($peer); 1 }) { warn $@; next }
+            next unless $pid;
             next                           if $pid == $$;
             kill($self->{+SIGNAL()}, $pid) if $self->{+SIGNAL()};
         }
@@ -112,7 +114,7 @@ sub wait {
         my @found;
         for my $peer ($con->peers) {
             next if $peer eq $con->id;
-            next unless eval { $con->peer_pid($peer) };
+            unless (eval { $con->peer_pid($peer); 1 }) { warn $@; next }
             push @found => $peer;
         }
 

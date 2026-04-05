@@ -169,13 +169,21 @@ sub init {
     my ($state, $fh) = $self->_lock_write;
 
     if ($self->{reconnect}) {
-        croak "Client '$id' does not exist" unless $state->{clients}{$id};
+        unless ($state->{clients}{$id}) {
+            $self->{disconnected} = 1;
+            croak "Client '$id' does not exist";
+        }
         my $data = $state->{clients}{$id};
-        croak "Connection already running in pid $data->{pid}"
-            if $data->{pid} && $data->{pid} != $$ && kill(0, $data->{pid});
+        if ($data->{pid} && $data->{pid} != $$ && kill(0, $data->{pid})) {
+            $self->{disconnected} = 1;
+            croak "Connection already running in pid $data->{pid}";
+        }
     }
     else {
-        croak "Client '$id' already exists" if $state->{clients}{$id};
+        if ($state->{clients}{$id}) {
+            $self->{disconnected} = 1;
+            croak "Client '$id' already exists";
+        }
         $state->{clients}{$id} = {pid => $$};
         $state->{messages}{$id} //= [];
     }
@@ -191,7 +199,11 @@ sub pending_messages { 0 }
 
 sub ready_messages {
     my $self = shift;
-    my ($state) = eval { $self->_lock_read } or return 0;
+    my $state;
+    unless (eval { ($state) = $self->_lock_read; 1 }) {
+        warn $@;
+        return 0;
+    }
     my $msgs = $state->{messages}{$self->{id}} // [];
     return @$msgs ? 1 : 0;
 }
@@ -263,7 +275,11 @@ sub peer_pid {
 
 sub write_stats {
     my $self = shift;
-    my ($state, $fh) = eval { $self->_lock_write } or return;
+    my ($state, $fh);
+    unless (eval { ($state, $fh) = $self->_lock_write; 1 }) {
+        warn $@;
+        return;
+    }
     $state->{stats}{$self->{id}} = $self->{stats};
     $self->_commit($state, $fh);
 }
@@ -288,7 +304,11 @@ sub all_stats {
 
 sub post_disconnect_hook {
     my $self = shift;
-    my ($state, $fh) = eval { $self->_lock_write } or return;
+    my ($state, $fh);
+    unless (eval { ($state, $fh) = $self->_lock_write; 1 }) {
+        warn $@;
+        return;
+    }
     delete $state->{clients}{$self->{id}};
     delete $state->{messages}{$self->{id}};
     $self->_commit($state, $fh);

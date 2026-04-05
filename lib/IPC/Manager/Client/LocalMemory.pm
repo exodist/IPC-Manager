@@ -1,6 +1,8 @@
-package IPC::Manager::Client::InMemory;
+package IPC::Manager::Client::LocalMemory;
 use strict;
 use warnings;
+
+our $VERSION = '0.000011';
 
 use Carp qw/croak/;
 
@@ -21,7 +23,7 @@ sub spawn {
     my $class  = shift;
     my %params = @_;
 
-    my $route = "inmemory-" . ++$IPC::Manager::Client::InMemory::_COUNTER;
+    my $route = "localmemory-" . ++$IPC::Manager::Client::LocalMemory::_COUNTER;
 
     $STORES{$route} = { clients => {}, stats => {} };
 
@@ -60,13 +62,21 @@ sub init {
     my $id    = $self->{id};
 
     if ($self->{reconnect}) {
-        croak "Client '$id' does not exist" unless $store->{clients}{$id};
+        unless ($store->{clients}{$id}) {
+            $self->{disconnected} = 1;
+            croak "Client '$id' does not exist";
+        }
         my $data = $store->{clients}{$id};
-        croak "Connection already running in pid $data->{pid}"
-            if $data->{pid} && $data->{pid} != $$ && kill(0, $data->{pid});
+        if ($data->{pid} && $data->{pid} != $$ && kill(0, $data->{pid})) {
+            $self->{disconnected} = 1;
+            croak "Connection already running in pid $data->{pid}";
+        }
     }
     else {
-        croak "Client '$id' already exists" if $store->{clients}{$id};
+        if ($store->{clients}{$id}) {
+            $self->{disconnected} = 1;
+            croak "Client '$id' already exists";
+        }
         $store->{clients}{$id} = {
             pid      => $$,
             messages => [],
@@ -80,7 +90,8 @@ sub pending_messages { 0 }
 
 sub ready_messages {
     my $self = shift;
-    my $data = eval { $self->_client_data } or return 0;
+    my $data;
+    unless (eval { $data = $self->_client_data; 1 }) { warn $@; return 0 }
     return @{$data->{messages}} ? 1 : 0;
 }
 
@@ -136,7 +147,8 @@ sub peer_pid {
 
 sub write_stats {
     my $self  = shift;
-    my $store = eval { $self->_store } or return;
+    my $store;
+    unless (eval { $store = $self->_store; 1 }) { warn $@; return }
     $store->{stats}{$self->{id}} = $self->{stats};
 }
 
@@ -156,10 +168,103 @@ sub all_stats {
     return \%out;
 }
 
-sub pre_disconnect_hook {
+sub post_disconnect_hook {
     my $self  = shift;
-    my $store = eval { $self->_store } or return;
+    my $store;
+    unless (eval { $store = $self->_store; 1 }) { warn $@; return }
     delete $store->{clients}{$self->{id}};
 }
 
 1;
+
+__END__
+
+=pod
+
+=encoding UTF-8
+
+=head1 NAME
+
+IPC::Manager::Client::LocalMemory - Process-local in-memory message store for testing only
+
+=head1 DESCRIPTION
+
+B<This client is intended for testing only.> It stores all state in a
+process-local Perl hash and B<does not work across multiple processes>.
+Messages, peer information, and statistics exist only within the memory of
+the process that created them.
+
+Use this protocol when you need a lightweight client for unit tests that
+exercise the L<IPC::Manager::Client> interface without touching the
+filesystem or requiring external IPC resources.
+
+=head1 SYNOPSIS
+
+    use IPC::Manager::Client::LocalMemory;
+    use IPC::Manager::Serializer::JSON;
+
+    my $route = IPC::Manager::Client::LocalMemory->spawn();
+    my $con1  = IPC::Manager::Client::LocalMemory->connect('c1', 'IPC::Manager::Serializer::JSON', $route);
+    my $con2  = IPC::Manager::Client::LocalMemory->connect('c2', 'IPC::Manager::Serializer::JSON', $route);
+
+    $con1->send_message(c2 => {hello => 'world'});
+    my @msgs = $con2->get_messages;
+
+    $con1->disconnect;
+    $con2->disconnect;
+    IPC::Manager::Client::LocalMemory->unspawn($route);
+
+=head1 LIMITATIONS
+
+=over 4
+
+=item *
+
+B<Single-process only.> The backing store is a package-scoped Perl hash.
+Forked children inherit a copy but do not share it with the parent or
+siblings.  For cross-process IPC use L<IPC::Manager::Client::MessageFiles>,
+L<IPC::Manager::Client::AtomicPipe>, L<IPC::Manager::Client::JSONFile>,
+or L<IPC::Manager::Client::SharedMem>.
+
+=item *
+
+C<have_handles_for_select> and C<have_handles_for_peer_change> both return
+false.  There are no file descriptors to poll.
+
+=back
+
+=head1 METHODS
+
+See L<IPC::Manager::Client> for inherited methods.
+
+=head1 SOURCE
+
+The source code repository for IPC::Manager can be found at
+L<https://github.com/exodist/IPC-Manager>.
+
+=head1 MAINTAINERS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 AUTHORS
+
+=over 4
+
+=item Chad Granum E<lt>exodist@cpan.orgE<gt>
+
+=back
+
+=head1 COPYRIGHT
+
+Copyright Chad Granum E<lt>exodist7@gmail.comE<gt>.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+See L<https://dev.perl.org/licenses/>
+
+=cut

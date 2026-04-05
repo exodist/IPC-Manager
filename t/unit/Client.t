@@ -1,13 +1,11 @@
 use Test2::V0;
 
-use lib 't/lib';
-
 use IPC::Manager::Client;
-use IPC::Manager::Client::InMemory;
+use IPC::Manager::Client::LocalMemory;
 use IPC::Manager::Serializer::JSON;
 
 my $SERIALIZER = 'IPC::Manager::Serializer::JSON';
-my $PROTOCOL   = 'IPC::Manager::Client::InMemory';
+my $PROTOCOL   = 'IPC::Manager::Client::LocalMemory';
 
 subtest 'base class abstract methods croak' => sub {
     for my $method (qw/have_ready_messages handles_for_select

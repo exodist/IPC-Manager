@@ -30,6 +30,7 @@ suggests "IO::Select" => "1.55";
 suggests "IO::Socket::UNIX" => "1.55";
 suggests "IPC::SysV" => "2.09";
 suggests "Linux::Inotify2" => "2.3";
+recommends "Digest::SHA" => "0";
 
 on 'test' => sub {
   requires "Test2::API" => "1.302219";
@@ -44,6 +45,7 @@ on 'configure' => sub {
 
 on 'develop' => sub {
   requires "Atomic::Pipe" => "0.022";
+  requires "Digest::SHA" => "0";
   requires "DBD::MariaDB" => "1.00";
   requires "DBD::Pg" => "v3.5.0";
   requires "DBD::mysql" => "4.00";

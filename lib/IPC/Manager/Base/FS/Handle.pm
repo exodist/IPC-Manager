@@ -2,7 +2,7 @@ package IPC::Manager::Base::FS::Handle;
 use strict;
 use warnings;
 
-our $VERSION = '0.000013';
+our $VERSION = '0.000014';
 
 use Carp qw/croak/;
 

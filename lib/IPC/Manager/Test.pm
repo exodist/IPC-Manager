@@ -199,8 +199,19 @@ sub test_generic {
 
     $con3->broadcast({mass => 'message2'});
     $con3->broadcast({mass => 'message3'});
-    is([$con1->get_messages], [T(), T()], "Got 2 more");
-    is([$con2->get_messages], [T(), T()], "Got 2 more");
+
+    # Non-blocking sockets may not deliver all datagrams instantly,
+    # so poll until we have the expected count.
+    my (@con1_msgs, @con2_msgs);
+    my $deadline = Time::HiRes::time() + 5;
+    until (@con1_msgs >= 2 && @con2_msgs >= 2) {
+        push @con1_msgs => $con1->get_messages;
+        push @con2_msgs => $con2->get_messages;
+        last if Time::HiRes::time() > $deadline;
+        Time::HiRes::sleep(0.05) unless @con1_msgs >= 2 && @con2_msgs >= 2;
+    }
+    is(\@con1_msgs, [T(), T()], "Got 2 more");
+    is(\@con2_msgs, [T(), T()], "Got 2 more");
 
     $con1->send_message(con2 => 'woosh, I am invisible');
 

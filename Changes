@@ -5,6 +5,7 @@
     - Fix DB viable() not detecting missing server binaries (initdb, mysqld, etc.)
     - Fix inotify tests failing when Linux::Inotify2 < 2.3 is installed
     - Enforce Atomic::Pipe minimum version 0.022 in viable check and tests
+    - Add JSON::PP prereq, remove unused Sub::Util, fix IO::Select version in dist.ini
 
 0.000013  2026-04-08 08:14:28-07:00 America/Los_Angeles
 

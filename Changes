@@ -3,6 +3,7 @@
     - Refactor viable() into base-class wrapper around _viable() so it never throws
     - Fix DB tests failing to skip when DBI is too old
     - Fix DB viable() not detecting missing server binaries (initdb, mysqld, etc.)
+    - Fix inotify tests failing when Linux::Inotify2 < 2.3 is installed
 
 0.000013  2026-04-08 08:14:28-07:00 America/Los_Angeles
 

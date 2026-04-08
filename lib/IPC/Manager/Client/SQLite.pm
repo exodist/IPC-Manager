@@ -43,7 +43,7 @@ sub table_sql {
                 `from`      CHAR(36)        NOT NULL REFERENCES ipcm_peers(id) ON DELETE CASCADE,
                 `stamp`     REAL            NOT NULL,
                 `content`   BLOB            NOT NULL,
-                `broadcast` BOOL            NOT NULL DEFAULT FALSE
+                `broadcast` BOOL            NOT NULL DEFAULT 0
             );
         EOT
     );

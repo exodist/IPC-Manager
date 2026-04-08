@@ -19,7 +19,8 @@ sub _viable {
     DBD::mysql->VERSION('4.00');
     require DBIx::QuickDB;
     DBIx::QuickDB->VERSION('0.000040');
-    DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::MySQL', {});
+    my ($ok, $fqn, $why) = DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::MySQL', {bootstrap => 1, autostart => 1});
+    die $why unless $ok;
     1;
 }
 

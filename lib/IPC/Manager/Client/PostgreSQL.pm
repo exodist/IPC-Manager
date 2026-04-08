@@ -19,7 +19,8 @@ sub _viable {
     DBD::Pg->VERSION('3.5.0');
     require DBIx::QuickDB;
     DBIx::QuickDB->VERSION('0.000040');
-    DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::PostgreSQL', {});
+    my ($ok, $fqn, $why) = DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::PostgreSQL', {bootstrap => 1, autostart => 1});
+    die $why unless $ok;
     1;
 }
 

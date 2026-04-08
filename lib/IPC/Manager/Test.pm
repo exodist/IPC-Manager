@@ -2,7 +2,7 @@ package IPC::Manager::Test;
 use strict;
 use warnings;
 
-use Carp qw/croak/;
+use Carp qw/croak confess/;
 use File::Spec;
 use File::Temp;
 use Time::HiRes;
@@ -19,6 +19,9 @@ sub run_all {
     my $protocol = $params{protocol} or croak "'protocol' is required";
     ipcm_default_protocol($protocol);
 
+    local $SIG{ALRM} = sub { confess("Test timed out after 180 seconds") };
+    alarm 180;
+
     for my $test ($class->tests) {
         my $pid = fork // die "Could not fork: $!";
         if ($pid) {
@@ -31,6 +34,8 @@ sub run_all {
         warn $err unless $ok;
         exit($ok ? 0 : 255);
     }
+
+    alarm 0;
 }
 
 sub tests {

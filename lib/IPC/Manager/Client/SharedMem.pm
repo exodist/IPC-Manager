@@ -30,10 +30,7 @@ sub _load_constants {
     $_S_IWUSR     = IPC::SysV::S_IWUSR();
 }
 
-sub viable {
-    local $@;
-    eval { require IPC::SysV; IPC::SysV->VERSION('2.09'); 1 } || 0;
-}
+sub _viable { require IPC::SysV; IPC::SysV->VERSION('2.09'); 1 }
 
 # Route format: "shmid:semid"
 

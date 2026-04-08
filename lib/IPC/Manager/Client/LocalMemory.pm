@@ -17,7 +17,7 @@ use IPC::Manager::Message;
 #   stats   => { id => { read => {}, sent => {} } }     -- persisted after disconnect
 my %STORES;
 
-sub viable { 1 }
+sub _viable { 1 }
 
 sub spawn {
     my $class  = shift;

@@ -9,14 +9,11 @@ use File::Temp qw/tempfile/;
 
 use DBI 1.644;
 
-sub viable {
-    local $@;
-    eval {
-        require DBIx::QuickDB;
-        DBIx::QuickDB->VERSION('0.000040');
-        DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::SQLite', {});
-        1;
-    } || 0;
+sub _viable {
+    require DBIx::QuickDB;
+    DBIx::QuickDB->VERSION('0.000040');
+    DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::SQLite', {});
+    1;
 }
 
 use parent 'IPC::Manager::Base::DBI';

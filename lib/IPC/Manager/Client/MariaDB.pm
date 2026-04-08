@@ -14,16 +14,13 @@ use Object::HashBase qw{
     +QDB
 };
 
-sub viable {
-    local $@;
-    eval {
-        require DBD::MariaDB;
-        DBD::MariaDB->VERSION('1.00');
-        require DBIx::QuickDB;
-        DBIx::QuickDB->VERSION('0.000040');
-        DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::MariaDB', {});
-        1;
-    } || 0;
+sub _viable {
+    require DBD::MariaDB;
+    DBD::MariaDB->VERSION('1.00');
+    require DBIx::QuickDB;
+    DBIx::QuickDB->VERSION('0.000040');
+    DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::MariaDB', {});
+    1;
 }
 
 sub dsn       { $_[0]->{+ROUTE} }

@@ -32,7 +32,7 @@ use Object::HashBase qw{
 # writes, even when filesystem mtime resolution is too coarse.
 my %_WRITE_GEN;
 
-sub viable { USE_INOTIFY || $HAVE_SHA }
+sub _viable { USE_INOTIFY || $HAVE_SHA || die "Need Linux::Inotify2 or Digest::SHA" }
 
 sub sanity {
     return if USE_INOTIFY || $HAVE_SHA;

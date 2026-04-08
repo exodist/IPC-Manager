@@ -14,16 +14,13 @@ use Object::HashBase qw{
     +QDB
 };
 
-sub viable {
-    local $@;
-    eval {
-        require DBD::Pg;
-        DBD::Pg->VERSION('3.5.0');
-        require DBIx::QuickDB;
-        DBIx::QuickDB->VERSION('0.000040');
-        DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::PostgreSQL', {});
-        1;
-    } || 0;
+sub _viable {
+    require DBD::Pg;
+    DBD::Pg->VERSION('3.5.0');
+    require DBIx::QuickDB;
+    DBIx::QuickDB->VERSION('0.000040');
+    DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::PostgreSQL', {});
+    1;
 }
 
 sub escape { '"' }

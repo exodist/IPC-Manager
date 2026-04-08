@@ -1,5 +1,7 @@
 {{$NEXT}}
 
+    - Refactor viable() into base-class wrapper around _viable() so it never throws
+
 0.000013  2026-04-08 08:14:28-07:00 America/Los_Angeles
 
     - Fix SQLite DEFAULT FALSE incompatibility with older SQLite versions

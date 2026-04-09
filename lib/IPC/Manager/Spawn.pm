@@ -26,6 +26,7 @@ use Object::HashBase qw{
     <signal
 
     do_sanity_check
+    debug
 };
 
 sub init {
@@ -125,7 +126,7 @@ sub wait {
 
         last unless @found;
 
-        print "Waiting for clients to go away: " . join(', ' => sort @found) . "\n";
+        print STDERR "Waiting for clients to go away: " . join(', ' => sort @found) . "\n" if $self->{+DEBUG};
         sleep 1;
     }
 

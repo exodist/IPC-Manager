@@ -2,6 +2,7 @@
 
     - Use Cpanel::JSON::XS directly and lazily reinitialize to survive global destruction
     - Replace JSON::PP prereq with Cpanel::JSON::XS in dist.ini
+    - Fix Spawn::wait() to waitpid child processes before destroying shared resources
 
 0.000014  2026-04-08 14:58:59-07:00 America/Los_Angeles
 

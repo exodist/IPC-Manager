@@ -1,5 +1,7 @@
 {{$NEXT}}
 
+    - Fix on_general_message test race where file was observed before content was written
+
 0.000016  2026-04-10 09:25:35-07:00 America/Los_Angeles
 
     - Fix Spawn shutdown race where fast services exit before wait() captures their PIDs

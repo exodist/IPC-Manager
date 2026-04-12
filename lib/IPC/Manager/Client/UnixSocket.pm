@@ -53,13 +53,22 @@ sub init {
     $self->SUPER::init();
 }
 
-sub fill_buffer {
+sub _recv_all {
     my $self = shift;
 
     my $s = $self->{+SOCKET};
-    while (my $msg = <$s>) {
+    while (1) {
+        my $msg;
+        my $ret = $s->recv($msg, 65536, 0);
+        last unless defined $ret && length $msg;
         push @{$self->{+BUFFER}} => $msg;
     }
+}
+
+sub fill_buffer {
+    my $self = shift;
+
+    $self->_recv_all;
 
     return @{$self->{+BUFFER}} ? 1 : 0;
 }
@@ -71,8 +80,7 @@ sub get_messages {
 
     push @out => $self->read_resume_file;
 
-    my $s = $self->{+SOCKET};
-    push @{$self->{+BUFFER}} => <$s>;
+    $self->_recv_all;
     for my $msg (@{$self->{+BUFFER}}) {
         $msg = IPC::Manager::Message->new($self->{+SERIALIZER}->deserialize($msg));
         push @out => $msg;

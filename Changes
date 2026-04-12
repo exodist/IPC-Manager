@@ -1,6 +1,7 @@
 {{$NEXT}}
 
     - Fix UnixSocket reads on FreeBSD: use recv() instead of diamond operator for SOCK_DGRAM sockets
+    - Fix SharedMem semaphore EINVAL race: disconnect Handle client before Spawn destruction
 
 0.000017  2026-04-11 09:16:39-07:00 America/Los_Angeles
 

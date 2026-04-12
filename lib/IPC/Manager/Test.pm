@@ -747,7 +747,7 @@ sub test_disconnect_with_handler {
     });
 
     is(scalar @handled, 2, "Handler received 2 pending messages");
-    my @contents = map { $_->content->{msg} } sort { $a->stamp <=> $b->stamp } @handled;
+    my @contents = map { $_->content->{msg} } IPC::Manager::Message::sort_messages(@handled);
     is(\@contents, ['waiting_1', 'waiting_2'], "Handler got correct message contents");
 
     $con1->disconnect;

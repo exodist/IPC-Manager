@@ -148,7 +148,7 @@ sub get_messages {
 
     push @out => $self->read_resume_file;
 
-    return sort { $a->stamp <=> $b->stamp } @out;
+    return $self->sort_messages(@out);
 }
 
 sub _write_message_file {

@@ -285,7 +285,7 @@ sub get_messages {
         push @out, $msg;
     }
 
-    return sort { $a->stamp <=> $b->stamp } @out;
+    return $self->sort_messages(@out);
 }
 
 sub send_message {

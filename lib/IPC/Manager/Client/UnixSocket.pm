@@ -89,7 +89,7 @@ sub get_messages {
 
     @{$self->{+BUFFER}} = ();
 
-    return sort { $a->stamp <=> $b->stamp } @out;
+    return $self->sort_messages(@out);
 }
 
 sub send_message {

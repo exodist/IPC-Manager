@@ -1,5 +1,7 @@
 {{$NEXT}}
 
+    - Add post_fork_hook to Role::Service and post_fork callback to Service for double-fork/daemonize support
+
 0.000018  2026-04-12 02:20:35-07:00 America/Los_Angeles
 
     - Fix UnixSocket reads on FreeBSD: use recv() instead of diamond operator for SOCK_DGRAM sockets

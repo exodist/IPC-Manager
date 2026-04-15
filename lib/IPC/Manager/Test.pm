@@ -409,9 +409,14 @@ sub test_workers {
                     exit 0;
                 };
 
-                open my $fh, '>', $longpid_file or die "open: $!";
+                # Write pid atomically: the parent polls for file existence,
+                # so we cannot let it observe an empty file before close()
+                # has flushed the pid.
+                my $tmp = "$longpid_file.tmp";
+                open my $fh, '>', $tmp or die "open: $!";
                 print $fh "$$\n";
                 close $fh;
+                rename($tmp, $longpid_file) or die "rename: $!";
 
                 sleep 1 while 1;
                 return 0;

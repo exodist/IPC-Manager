@@ -655,12 +655,17 @@ sub test_service_callbacks {
     }
     ok(-e $interval_file, "on_interval callback fired");
 
-    # Trigger peer_delta by connecting a new client to the same bus
+    # Trigger peer_delta by connecting a new client to the same bus.
+    # The service polls at its interval (0.1s above), but slow CI machines
+    # can take much longer to schedule the service's poll, so wait for the
+    # callback to actually fire instead of relying on a fixed sleep.
     my $extra = ipcm_connect('extra_peer' => $handle->ipcm_info);
-    # Let the service notice
-    Time::HiRes::sleep(0.5);
+    $waited = 0;
+    until (-e $peer_file || $waited > 10) {
+        Time::HiRes::sleep(0.1);
+        $waited += 0.1;
+    }
     $extra->disconnect;
-    Time::HiRes::sleep(0.5);
     ok(-e $peer_file, "on_peer_delta callback fired");
 
     # Trigger should_end

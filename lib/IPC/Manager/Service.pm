@@ -2,7 +2,7 @@ package IPC::Manager::Service;
 use strict;
 use warnings;
 
-our $VERSION = '0.000020';
+our $VERSION = '0.000021';
 
 use Carp qw/croak confess/;
 use List::Util qw/max/;

@@ -82,16 +82,18 @@ sub service_pid {
 
 sub sync_request {
     my $self = shift;
-    my $id = $self->send_request(@_);
-    return $self->await_response($id);
+    my ($peer, $payload, $timeout) = @_;
+    my $id = $self->send_request($peer, $payload);
+    return $self->await_response($id, $timeout);
 }
 
 sub await_response {
     my $self = shift;
-    my ($id) = @_;
+    my ($id, $timeout) = @_;
 
     my $client   = $self->client;
     my $interval = $self->{+INTERVAL};
+    my $deadline = defined($timeout) ? time + $timeout : undef;
 
     while (1) {
         my @out = $self->get_response($id);
@@ -120,7 +122,16 @@ sub await_response {
                 unless $active;
         }
 
-        $self->poll($interval);
+        my $wait = $interval;
+        if (defined $deadline) {
+            my $remaining = $deadline - time;
+            croak "await_response: timed out after ${timeout}s waiting for response '$id'"
+                if $remaining <= 0;
+
+            $wait = $remaining if $remaining < $wait;
+        }
+
+        $self->poll($wait);
     }
 }
 
@@ -285,24 +296,33 @@ Returns the PID of the peer service.
 
 =item $res = $self->sync_request($peer, $payload)
 
+=item $res = $self->sync_request($peer, $payload, $timeout)
+
 Sends a request and waits for the response. Returns the response.
 
-C<sync_request> will C<croak> if the target peer is fully removed from
-the bus while the request is outstanding.
+If C<$timeout> (seconds) is provided, C<sync_request> will C<croak> with a
+timeout message if no response arrives before the deadline. If C<$timeout>
+is omitted or C<undef>, the call blocks indefinitely.
 
-For protocols that support suspend/reconnect (see C<suspend_supported>
-in L<IPC::Manager::Client>), a peer that has merely suspended or
-restarted under a new process id is B<not> treated as gone: the call
-keeps waiting, because a response can still arrive once the peer
-resumes.  Only full unregistration (C<peer_exists> false) triggers the
-peer-went-away error.  For protocols without suspend support, a dead
-process id counts as gone.
+Regardless of the timeout, C<sync_request> will also C<croak> if the
+target peer is fully removed from the bus while the request is
+outstanding.
+
+For protocols that support suspend/reconnect (see
+C<suspend_supported> in L<IPC::Manager::Client>), a peer that has
+merely suspended or restarted under a new process id is B<not> treated
+as gone: the call keeps waiting, because a response can still arrive
+once the peer resumes.  Only full unregistration (C<peer_exists>
+false) triggers the peer-went-away error.  For protocols without
+suspend support, a dead process id counts as gone.
 
 =item $res = $self->await_response($id)
 
+=item $res = $self->await_response($id, $timeout)
+
 Waits for a response to a request. Returns the response when available.
 
-Honors the same peer-death semantics as C<sync_request>.
+Honors the same C<$timeout> and peer-death semantics as C<sync_request>.
 
 =item $self->await_all_responses()
 

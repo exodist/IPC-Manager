@@ -1,6 +1,7 @@
 {{$NEXT}}
 
     - Fix sync_request hang when a peer disappears mid-request: await_response now snapshots the peer at send time and croaks if the peer is fully removed from the bus before the response arrives. Suspend-capable protocols (those advertising suspend_supported) keep waiting across a clean suspend or a restart-under-a-new-pid because the response can still be delivered once the peer resumes — only full unregistration counts as "gone"
+    - Add optional $timeout argument to sync_request() and await_response(); without it the behavior is unchanged (blocks indefinitely), with it the call croaks once the deadline elapses
 
 0.000023  2026-04-17 12:06:27-07:00 America/Los_Angeles
 

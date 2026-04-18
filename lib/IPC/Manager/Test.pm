@@ -319,8 +319,8 @@ sub test_nested_services {
         handle_response => sub {
             my ($self, $resp, $msg) = @_;
             my $id = $resp->{ipcm_response_id};
-            if (my $handler = delete $self->{_RESPONSE_HANDLER}->{$id}) {
-                $handler->($resp, $msg);
+            if (my $entry = delete $self->{_RESPONSE_HANDLER}->{$id}) {
+                $entry->{cb}->($resp, $msg);
             }
         },
     );

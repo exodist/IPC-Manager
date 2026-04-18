@@ -170,7 +170,6 @@ sub peer_active {
 
     return 0 unless $peer_pid;
     return 0 unless $self->pid_is_running($peer_pid);
-    return 0 unless kill(0, $peer_pid);
     return 1;
 }
 

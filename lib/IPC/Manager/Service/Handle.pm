@@ -112,7 +112,7 @@ sub await_response {
                 $active = $client->peer_exists($peer) ? 1 : 0;
             }
             elsif (defined $pid) {
-                $active = $client->pid_is_running($pid) && kill(0, $pid);
+                $active = $client->pid_is_running($pid) ? 1 : 0;
             }
             else {
                 $active = $client->peer_active($peer);

@@ -7,7 +7,6 @@ our $VERSION = '0.000024';
 use File::Spec;
 use Atomic::Pipe;
 use Carp qw/croak/;
-use Errno qw/EPERM/;
 use POSIX qw/mkfifo/;
 
 use parent 'IPC::Manager::Base::FS::Handle';
@@ -122,12 +121,9 @@ sub peer_left {
         my ($pid) = split /:/, $tag, 2;
         next unless $pid && $pid =~ m/^-?\d+$/;
 
-        # Skip pids that are still alive, or that we lack permission to
-        # signal (kill returns 0 with $! == EPERM in that case — the pid is
-        # real, just not ours, so leave it alone).
-        local $!;
-        next if kill(0, $pid);
-        next if $! == EPERM;
+        # pid_is_running returns 1 (ours), -1 (running but not ours), or 0
+        # (gone).  Only clear the tag when the pid is genuinely gone.
+        next if $self->pid_is_running($pid);
 
         delete $state->{parts}->{$tag};
         delete $state->{buffers}->{$tag};

@@ -43,6 +43,7 @@ sub pre_disconnect_hook  { }
 sub pre_suspend_hook     { }
 sub post_suspend_hook    { }
 sub post_disconnect_hook { }
+sub peer_left            { }
 
 sub reconnect { shift->connect(@_, reconnect => 1) }
 sub pid_check { croak "Client used from wrong PID" if $_[0]->{+PID} != $$; $_[0] }

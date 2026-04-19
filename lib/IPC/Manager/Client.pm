@@ -8,7 +8,7 @@ use Carp qw/croak/;
 use Scalar::Util qw/blessed weaken/;
 use Time::HiRes qw/time/;
 
-use IPC::Manager::Util qw/pid_is_running/;
+use IPC::Manager::Util qw/pid_is_running tinysleep/;
 
 use IPC::Manager::Message;
 
@@ -221,7 +221,7 @@ sub _wait_for_peer_change {
         return;
     }
 
-    Time::HiRes::sleep($max_wait);
+    tinysleep($max_wait);
     return;
 }
 

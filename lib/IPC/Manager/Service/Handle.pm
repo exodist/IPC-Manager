@@ -5,8 +5,10 @@ use warnings;
 our $VERSION = '0.000027';
 
 use Carp qw/croak/;
-use Time::HiRes qw/sleep time/;
+use Time::HiRes qw/time/;
 use Test2::Util::UUID qw/gen_uuid/;
+
+use IPC::Manager::Util qw/tinysleep/;
 
 use Role::Tiny::With;
 
@@ -177,7 +179,7 @@ sub poll {
                 last if $delta >= $timeout
             }
 
-            sleep $self->{+INTERVAL};
+            tinysleep($self->{+INTERVAL});
         }
     }
 

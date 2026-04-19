@@ -9,6 +9,7 @@ use Time::HiRes();
 
 use Carp qw/croak/;
 use IPC::Manager::Serializer::JSON();
+use IPC::Manager::Util qw/tinysleep/;
 
 use overload(
     fallback => 1,
@@ -157,7 +158,7 @@ sub wait {
             my $ret = waitpid($pid, POSIX::WNOHANG());
             delete $child_pids{$pid} if $ret != 0;
         }
-        Time::HiRes::sleep(0.05) if keys %child_pids;
+        tinysleep(0.05) if keys %child_pids;
     }
 }
 

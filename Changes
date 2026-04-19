@@ -1,5 +1,7 @@
 {{$NEXT}}
 
+0.000025  2026-04-19 06:33:45-07:00 America/Los_Angeles
+
     - Add optional $timeout argument to Service::Peer::ready(), Service::Handle::ready(), and the underlying Client::peer_active(). With no timeout the behavior is unchanged (one-shot check); with a timeout the call blocks until the peer becomes active or the timeout elapses. A timeout of 0 blocks indefinitely. Polls via IO::Select on the client's peer-change descriptor when available (inotify on FS-based protocols) and otherwise falls back to a 0.05s sleep-and-retry loop, replacing the 0.025s busy-wait in Service::State
 
 0.000024  2026-04-18 14:57:47-07:00 America/Los_Angeles

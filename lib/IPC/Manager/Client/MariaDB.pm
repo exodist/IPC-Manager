@@ -35,7 +35,7 @@ sub table_sql {
     return (
         <<"        EOT",
             CREATE TABLE IF NOT EXISTS ipcm_peers(
-                `id`        VARCHAR(36)     NOT NULL PRIMARY KEY,
+                `id`        VARCHAR(512)    NOT NULL PRIMARY KEY,
                 `pid`       INTEGER         DEFAULT NULL,
                 `active`    DOUBLE          DEFAULT UNIX_TIMESTAMP(),
                 `stats`     BLOB            DEFAULT NULL
@@ -44,8 +44,8 @@ sub table_sql {
         <<"        EOT",
             CREATE TABLE IF NOT EXISTS ipcm_messages(
                 `id`        UUID            NOT NULL PRIMARY KEY,
-                `to`        VARCHAR(36)     NOT NULL REFERENCES ipcm_peers(id) ON DELETE CASCADE,
-                `from`      VARCHAR(36)     NOT NULL REFERENCES ipcm_peers(id) ON DELETE CASCADE,
+                `to`        VARCHAR(512)    NOT NULL REFERENCES ipcm_peers(id) ON DELETE CASCADE,
+                `from`      VARCHAR(512)    NOT NULL REFERENCES ipcm_peers(id) ON DELETE CASCADE,
                 `stamp`     DOUBLE          NOT NULL,
                 `content`   BLOB            NOT NULL,
                 `broadcast` BOOL            NOT NULL DEFAULT FALSE

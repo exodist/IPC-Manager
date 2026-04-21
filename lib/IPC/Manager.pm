@@ -352,6 +352,11 @@ callback) the new service shares the existing IPC bus, and the return value is
 an L<IPC::Manager::Service::Peer> that the calling service can use to send
 requests to the nested service.
 
+The returned handle or peer carries the first-fork child pid via
+C<< $handle->child_pid >> - useful for supervisors that track services by
+pid.  See L<IPC::Manager::Service::Handle/child_pid> for the first-fork
+caveat around C<post_fork_hook> daemonization.
+
 B<Void context and the ready race>: when called in void context from inside a
 service, C<ipcm_service> forks the nested service and returns immediately
 without waiting for it to finish connecting to the bus. If you intend to

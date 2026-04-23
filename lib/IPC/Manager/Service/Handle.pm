@@ -125,8 +125,19 @@ sub await_response {
                 $active = $client->peer_active($peer);
             }
 
-            croak "peer '$peer' went away while awaiting response '$id'"
-                unless $active;
+            unless ($active) {
+                # Race: the peer may have sent its response and then
+                # exited before we polled for it.  The peer-active check
+                # now reports gone, but the response can still be sitting
+                # in the transport waiting to be ingested.  Do one final
+                # non-blocking drain and re-check before declaring the
+                # request lost.
+                $self->poll(0);
+                @out = $self->get_response($id);
+                return $out[0] if @out;
+
+                croak "peer '$peer' went away while awaiting response '$id'";
+            }
         }
 
         my $wait = $interval;

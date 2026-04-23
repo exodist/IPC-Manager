@@ -34,7 +34,19 @@ sub dbh {
 
     if (blessed($this) && $this->{+DBH}) {
         $this->pid_check;
-        return $this->{+DBH} if $this->{+DBH}->{Active};
+
+        # During global destruction DBI's tied inner handle may already
+        # be torn down; probing ->{Active} then emits
+        # "Can't call method 'FETCH' on an undefined value".  Guard the
+        # probe so we transparently fall through to reconnect instead.
+        my $active;
+        {
+            local $SIG{__WARN__} = sub { };
+            local $@;
+            $active = eval { $this->{+DBH}->{Active} };
+        }
+
+        return $this->{+DBH} if $active;
         delete $this->{+DBH};
     }
 

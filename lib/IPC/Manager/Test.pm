@@ -576,14 +576,17 @@ sub test_sync_request_peer_exits_after_response {
 
         # Wait for the service process to die and the bus to deregister it.
         # waitpid the child the spawn started, so peer_active() definitively
-        # reports gone by the time await_response runs.
+        # reports gone by the time await_response runs.  Prefer blocking
+        # waitpid for direct children; fall back to a short poll otherwise.
         my $svc_pid = $handle->child_pid;
         if (defined $svc_pid) {
-            for (1 .. 50) {
-                last unless pid_is_running($svc_pid);
-                Time::HiRes::sleep(0.05);
+            my $r = waitpid($svc_pid, 0);
+            if ($r == -1) {
+                for (1 .. 50) {
+                    last unless pid_is_running($svc_pid);
+                    Time::HiRes::sleep(0.05);
+                }
             }
-            waitpid($svc_pid, POSIX::WNOHANG());
         }
         else {
             Time::HiRes::sleep(1);
@@ -1038,21 +1041,21 @@ sub test_intercept_errors {
     ok(-e $interval_survived, "on_interval survived exception and kept firing");
 
     # 2) on_peer_delta: connect a peer — triggers an exception, but service
-    #    should keep running
+    #    should keep running.  The follow-up sync_request below is FIFO-
+    #    serialised behind the peer-delta dispatch, so by the time the
+    #    response arrives the peer_delta callback has already fired (and
+    #    been intercepted).
     my $extra = ipcm_connect('ie_extra' => $handle->ipcm_info);
-    Time::HiRes::sleep(0.5);
     $extra->disconnect;
-    Time::HiRes::sleep(0.3);
 
-    # Verify service is still alive after peer_delta exception
     my $resp = $handle->sync_request(ie_svc => 'ping');
     is($resp->{response}, 'ok', "Service survived on_peer_delta exception");
 
-    # 3) on_general_message: send a plain message that throws
+    # 3) on_general_message: send a plain message that throws.  Same FIFO
+    # ordering argument: by the time the next sync_request returns, the
+    # general_message callback has already fired (and been intercepted).
     $handle->client->send_message(ie_svc => {action => 'crash'});
-    Time::HiRes::sleep(0.5);
 
-    # Verify service is still alive after general_message exception
     my $resp2 = $handle->sync_request(ie_svc => 'ping');
     is($resp2->{response}, 'ok', "Service survived on_general_message exception");
 

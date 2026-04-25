@@ -318,14 +318,19 @@ a. **Listener accept.** If the listen socket is in the readable set,
 b. **Handshake advance.** For every readable in-progress fd,
    `service->advance_handshakes` reads as much as possible. When a HELLO
    frame is fully decoded:
-   - validate `auth_key`; mismatch => close silently, drop fd
+   - validate `auth_key`; mismatch or missing => close fd silently and
+     record an entry in the per-cycle "rejected connections" accumulator
+     (reason `bad_key` or `missing_key`)
+   - if the HELLO is structurally invalid / not decodable => close fd
+     and record a `malformed_hello` rejection
    - check for an existing live stream to that peer id; if one exists,
      apply the lower-`connection_uuid` rule and close the loser
    - on accept, send HELLO_ACK, promote the fd to the per-peer stream
      pool, record the peer id in the per-cycle "new connections"
      accumulator
    HELLO that does not arrive within the handshake timeout (default 2s
-   tracked by handshake-start time, checked each iteration) closes the fd.
+   tracked by handshake-start time, checked each iteration) closes the
+   fd and records a `handshake_timeout` rejection.
 
 c. **Stream reads.** For every readable established stream,
    `service->drain_stream` reads bytes into the per-stream buffer and
@@ -342,11 +347,12 @@ e. **Main driver reads.** The composite's `get_messages` calls
    collected in step c. The combined list is what `watch` puts in
    `activity{messages}`.
 
-f. **Drain accumulators.** `service->take_new_connections` and
-   `service->take_lost_connections` return the per-cycle peer-id lists
-   accumulated in steps a/b and c. `watch` puts them in
-   `activity{new_connections}` and `activity{lost_connections}` (only
-   when non-empty).
+f. **Drain accumulators.** `service->take_new_connections`,
+   `service->take_lost_connections`, and
+   `service->take_rejected_connections` return the per-cycle accumulators
+   from steps a/b/c. `watch` puts them in `activity{new_connections}`,
+   `activity{lost_connections}`, and `activity{rejected_connections}`
+   (each only when non-empty).
 
 #### New activity-hash keys
 
@@ -358,33 +364,63 @@ f. **Drain accumulators.** `service->take_new_connections` and
     # cycle. Set only when non-empty.
     new_connections => ['svcClientA', 'svcClientB'],
 
-    # Arrayref of peer ids whose stream was closed (EOF, framing error,
-    # auth fail, or duplicate-race loss) this cycle. Set only when
+    # Arrayref of peer ids whose established stream was closed (EOF,
+    # framing error, or duplicate-race loss) this cycle. Set only when
     # non-empty. Distinct from peer_delta: peer_delta reflects main-
     # driver peer presence; lost_connections reflects only the stream
-    # layer.
+    # layer. (Note: failures during the HELLO handshake are reported
+    # under rejected_connections, not lost_connections - until a
+    # connection is established it is never "lost".)
     lost_connections => ['svcClientC'],
+
+    # Arrayref of hashrefs describing inbound connection attempts that
+    # were rejected before promotion to an established stream. Set only
+    # when non-empty. Each entry:
+    #   {
+    #       reason       => 'bad_key' | 'missing_key' |
+    #                       'malformed_hello' | 'handshake_timeout',
+    #       claimed_from => $peer_id_string_or_undef,
+    #       remote       => { type => 'tcp',  host => '...', port => N }
+    #                    || { type => 'unix', path => '...' }
+    #                    || undef,
+    #       at           => $hires_time,
+    #   }
+    # `claimed_from` is the value of the `from` field in the HELLO frame
+    # if one was decoded before the rejection, otherwise undef. It must
+    # NOT be trusted (the connection failed auth); it is recorded only
+    # so callers can correlate logs.
+    rejected_connections => [
+        { reason => 'bad_key', claimed_from => 'svcClientD',
+          remote => { type => 'unix', path => '...' }, at => 1714065023.42 },
+    ],
 }
 ```
 
 #### New role hooks
 
-Two optional callbacks are added to `IPC::Manager::Role::Service`,
+Three optional callbacks are added to `IPC::Manager::Role::Service`,
 parallel to `on_peer_delta`:
 
 - `on_new_connection` - called once per peer id in
   `activity{new_connections}`.
 - `on_lost_connection` - called once per peer id in
   `activity{lost_connections}`.
+- `on_rejected_connection` - called once per entry in
+  `activity{rejected_connections}` with the rejection hashref described
+  above.
 
-Default implementations are no-ops. `IPC::Manager::Service` exposes
-matching constructor params and `push_*` / `clear_*` accessors using
-the same code-generation pattern as the existing `@ACTIONS` list.
+Default implementations are no-ops. The default `on_rejected_connection`
+SHOULD log via `$self->debug` at minimum so that a misconfigured peer
+without an explicit handler still surfaces something visible; this is
+explicit in the role and called out so reviewers can object.
+`IPC::Manager::Service` exposes matching constructor params and
+`push_*` / `clear_*` accessors using the same code-generation pattern as
+the existing `@ACTIONS` list.
 
 `Role::Service::run` consumes the new keys after `pid_watch` and before
-`messages`, dispatching the callbacks via `_run_on_new_connection` and
-`_run_on_lost_connection` (matching the existing `_run_on_*` wrapper
-pattern that goes through `try`).
+`messages`, dispatching the callbacks via `_run_on_new_connection`,
+`_run_on_lost_connection`, and `_run_on_rejected_connection` (matching
+the existing `_run_on_*` wrapper pattern that goes through `try`).
 
 #### Files affected by this section
 
@@ -398,9 +434,9 @@ pattern that goes through `try`).
   `on_new_connection` and `on_lost_connection`.
 - `IPC::Manager::Client::Composite`: provide
   `accept_pending`, `advance_handshakes`, `drain_stream`,
-  `take_new_connections`, `take_lost_connections`. The first three may
-  be implemented on `Base::ServiceSocket` and exposed through the
-  composite.
+  `take_new_connections`, `take_lost_connections`,
+  `take_rejected_connections`. The first three may be implemented on
+  `Base::ServiceSocket` and exposed through the composite.
 
 ### Service startup flow
 
@@ -586,10 +622,18 @@ Tests live alongside existing protocol tests:
   - `on_new_connection` callback fires with the correct peer id when a
     client connects to a service, before any messages from that peer are
     delivered
-  - `on_lost_connection` callback fires when a stream closes (peer EOF,
-    framing error, auth fail) and is independent of `on_peer_delta`
-  - `activity{new_connections}` and `activity{lost_connections}` keys
-    appear in `on_all` only on cycles where they are non-empty
+  - `on_lost_connection` callback fires when an established stream
+    closes (peer EOF, framing error, duplicate-race loss) and is
+    independent of `on_peer_delta`
+  - `on_rejected_connection` callback fires with the correct
+    `reason` (`bad_key`, `missing_key`, `malformed_hello`,
+    `handshake_timeout`) and remote info; verifies that auth-failed
+    attempts do NOT appear in `on_lost_connection` or `on_new_connection`
+  - `activity{new_connections}`, `activity{lost_connections}`, and
+    `activity{rejected_connections}` keys appear in `on_all` only on
+    cycles where they are non-empty
+  - rejected attempts do not leak peer ids into the established peer
+    set (no false entries in `peers()`, `peer_delta`, or stats)
   - one service accepting from multiple clients concurrently: each client
     sends a request, all get correct responses on their own streams
   - service-to-service messaging
@@ -632,13 +676,16 @@ Modified:
   (write `.service`), and clean it up in `post_disconnect_hook`.
 - `lib/IPC/Manager/Base/DBI.pm`: same, against the peer table column.
 - `lib/IPC/Manager/Role/Service.pm`: expand `watch()` (accept_pending,
-  advance_handshakes, drain_stream, write-side drain, take_*_connections),
-  add new activity keys `new_connections` and `lost_connections`, dispatch
-  them in `run()` via `_run_on_new_connection` / `_run_on_lost_connection`,
-  add no-op defaults `run_on_new_connection` / `run_on_lost_connection`.
-- `lib/IPC/Manager/Service.pm`: add `on_new_connection` and
-  `on_lost_connection` to `@ACTIONS` so the existing accessor codegen
-  produces `push_*` / `clear_*` / `run_*` for them.
+  advance_handshakes, drain_stream, write-side drain,
+  take_*_connections), add new activity keys `new_connections`,
+  `lost_connections`, and `rejected_connections`, dispatch them in
+  `run()` via `_run_on_new_connection`, `_run_on_lost_connection`, and
+  `_run_on_rejected_connection`, add no-op defaults plus a debug-log
+  default for `run_on_rejected_connection`.
+- `lib/IPC/Manager/Service.pm`: add `on_new_connection`,
+  `on_lost_connection`, and `on_rejected_connection` to `@ACTIONS` so
+  the existing accessor codegen produces `push_*` / `clear_*` / `run_*`
+  for them.
 
 Companion update (per CLAUDE.md): mirror any base-class changes into
 `../IPC-Manager-Client-SharedMem/` if the `Client` interface changes

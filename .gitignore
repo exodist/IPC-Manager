@@ -23,3 +23,4 @@ mysql-bin.index
 data
 CLAUDE.md
 .claude
+.worktrees/

@@ -160,4 +160,18 @@ subtest 'double disconnect is a no-op' => sub {
     $PROTOCOL->unspawn($route);
 };
 
+subtest service_endpoint_defaults => sub {
+    my $class = 'IPC::Manager::Client';
+    can_ok($class, qw/peer_service_endpoint publish_service_endpoint retract_service_endpoint/);
+
+    my $stub = bless {}, $class;
+    is($stub->peer_service_endpoint('any'), undef, 'default returns undef');
+
+    ok(lives { $stub->publish_service_endpoint('any', { type => 'unix', path => '/x' }) },
+       'default publish is a no-op');
+
+    ok(lives { $stub->retract_service_endpoint('any') },
+       'default retract is a no-op');
+};
+
 done_testing;

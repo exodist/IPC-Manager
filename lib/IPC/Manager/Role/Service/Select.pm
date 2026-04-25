@@ -32,25 +32,6 @@ sub select {
     return $self->{_SELECT} = $s;
 }
 
-# Build a fresh IO::Select for the client's writable handles, or
-# return undef when no peer has a backlog. Built fresh per call
-# because the writable-handle set tracks the outbox, which is
-# transient by design.
-sub select_write {
-    my $self = shift;
-    my $client = $self->client;
-
-    return undef unless $client->have_writable_handles;
-
-    my @handles = $client->writable_handles;
-    return undef unless @handles;
-
-    require IO::Select;
-    my $s = IO::Select->new;
-    $s->add(@handles);
-    return $s;
-}
-
 1;
 
 __END__

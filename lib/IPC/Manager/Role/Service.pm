@@ -394,28 +394,13 @@ sub watch {
         my $reaped = $self->reap_children;
         $activity{pids} = $reaped if $reaped && keys %$reaped;
 
-        # Drain any queued outbound messages first; a previous
-        # iteration may have left bytes pending and the kernel may
-        # have made room while we were not looking.
-        $client->drain_pending if $client->pending_sends;
+        my $select = $self->select;
 
-        my $select_r = $self->select;
-        my $select_w = $self->select_write;    # undef when no backlog
-
-        if ($select_r || $select_w) {
-            require IO::Select;
-            my ($r, $w) = IO::Select->select($select_r, $select_w, undef, $cycle);
-
-            if ($r && @$r) {
+        if ($select) {
+            if ($select->can_read($cycle)) {
                 @messages = $client->get_messages;
                 $client->reset_handles_for_peer_change if $client->have_handles_for_peer_change;
             }
-
-            # If any writable handle fired, drain again. This is the
-            # portability path: on platforms where the FIFO buffer
-            # cannot grow past the kernel default, the loop wakes the
-            # moment room appears.
-            $client->drain_pending if $w && @$w;
         }
         else {
             @messages = $client->get_messages;
@@ -447,7 +432,7 @@ sub watch {
 
         return \%activity if keys %activity;
 
-        tinysleep($cycle) unless $select_r || $select_w;
+        tinysleep($cycle) unless $select;
     }
 }
 

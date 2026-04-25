@@ -74,30 +74,67 @@ service transport so callers continue to interact with a single
 
 ```
                 Process P1 (main driver: MessageFiles, service transport: ServiceUnix)
-                +--------------------------------------------------------+
-                |   IPC::Manager::Client::Composite                      |
-                |     +--- main client (MessageFiles)                    |
-                |     |     - peer dir, .pid, .name, .stats, .resume     |
-                |     |     - .service sidecar (NEW): endpoint info      |
-                |     +--- service layer (ServiceUnix)                   |
-                |           - listen socket (only when running a service)|
-                |           - stream cache: peer_id -> StreamState       |
-                +--------------------------------------------------------+
-                       |                              ^
-                       | non-service peers via main   | bidirectional streams
-                       v                              v
-                +-------------+              +-------------------+
-                | regular bus |              |  per-peer streams |
-                +-------------+              +-------------------+
+                +-----------------------------------------------------------+
+                |   IPC::Manager::Client::Composite                         |
+                |     +--- main client (MessageFiles)                       |
+                |     |     - peer dir, .pid, .name, .stats, .resume        |
+                |     |     - .service sidecar (NEW): endpoint info         |
+                |     +--- service layer (ServiceUnix)                      |
+                |           - listen socket (only when running a service)   |
+                |           - stream pool keyed by peer id (concurrent N):  |
+                |               svcA -> StreamState                         |
+                |               svcB -> StreamState                         |
+                |               svcC -> StreamState   (... etc)             |
+                +-----------------------------------------------------------+
+                       |                       |          |        |
+                       | non-service via main  |          |        |
+                       v                       v          v        v
+                +-------------+         +------+   +------+  +------+
+                | regular bus |         | svcA |   | svcB |  | svcC |
+                +-------------+         | strm |   | strm |  | strm |
+                                        +------+   +------+  +------+
+              (one main bus, plus N independent bidirectional streams)
 ```
 
 A composite client owns:
 
 - `main` - an instance of any existing `IPC::Manager::Client` subclass.
 - `service` - an instance of a `Service*` transport (only opens its listen
-  socket when the local peer is running a service).
+  socket when the local peer is running a service). The service transport
+  is a multiplexer: it manages a pool of concurrently open streams keyed by
+  peer id (see "Multi-peer streams" below). One client process can be
+  connected to N services simultaneously; one service process can have
+  accepted streams from M clients simultaneously.
 - A unified `IPC::Manager::Client` interface so neither service code nor user
   code needs to know about the dual layer.
+
+### Multi-peer streams (explicit)
+
+A single composite client maintains independent, concurrent streams to as
+many service peers as it has business with. Concretely:
+
+- `streams` is a hash `{peer_id => StreamState}` on the `service` transport.
+  Entries are created lazily on first send to that peer (dial side) or on
+  successful HELLO acceptance (accept side).
+- `send_message($peerA => $msg)` and `send_message($peerB => $msg)` operate
+  on different stream entries; they do not serialize through one another and
+  do not block one another.
+- `get_messages` drains every stream that is ready in the current select
+  cycle, in addition to the main driver's messages. There is no per-cycle
+  cap; the service loop sees a single combined batch.
+- `handles_for_select` returns the union of: main-driver handles + listen
+  socket (if any) + every currently open stream socket (read side, plus
+  write side for any stream whose Outbox has pending bytes). The set grows
+  and shrinks across loop iterations as streams open and close.
+- A non-service client (no listener) still uses the multi-stream pool for
+  dialed connections to multiple services.
+- Stream lifetimes are independent: closing one stream (peer EOF, write
+  error, retract) does not affect the others.
+
+This is the normal expected operating shape, not an edge case. A worker
+that calls three services to fan out a request is using three streams; a
+service that talks to two downstream services and serves four upstream
+clients is multiplexing six streams plus its main-driver handles.
 
 ## User-facing API
 
@@ -374,12 +411,17 @@ only on first send).
 
 - Streams are opened lazily on the first send to that peer.
 - Streams are reused for all subsequent messages in either direction.
-- On EOF / write error, the stream is removed from the cache. The next
-  `send_message` to that peer triggers a redial (lazy reconnect for
-  service-to-service / client-to-service traffic).
+- A composite holds an unbounded pool of concurrent streams (one per
+  service peer). Opening a stream to peer B does not close or stall the
+  stream to peer A.
+- Each stream has its own read buffer, its own Outbox, and its own framing
+  decoder. Read/write activity on different streams is independent.
+- On EOF / write error, the affected stream is removed from the pool;
+  other streams are untouched. The next `send_message` to that peer
+  triggers a redial.
 - The main driver remains the source of truth for "is this peer alive?"
-  (existing peer_delta mechanism). A stream EOF alone does not declare a peer
-  gone; it only invalidates the stream cache entry.
+  (existing peer_delta mechanism). A stream EOF alone does not declare a
+  peer gone; it only invalidates that pool entry.
 
 ### Shutdown
 
@@ -430,6 +472,11 @@ Tests live alongside existing protocol tests:
 - Specific scenarios:
   - service receives request from non-service client over stream, replies on
     same stream
+  - one client connected to multiple services concurrently: send to svcA,
+    svcB, svcC in interleaved order, verify per-peer ordering and that no
+    stream blocks another
+  - one service accepting from multiple clients concurrently: each client
+    sends a request, all get correct responses on their own streams
   - service-to-service messaging
   - simultaneous-dial duplicate-connection race resolution (force the race
     via a synchronization point and verify the lower-uuid stream survives)

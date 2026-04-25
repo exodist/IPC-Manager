@@ -20,25 +20,43 @@ sub run_all {
     my $protocol = $params{protocol} or croak "'protocol' is required";
     ipcm_default_protocol($protocol);
 
-    my $timeout = $ENV{IPC_MANAGER_TEST_TIMEOUT} || 180;
-    my $current_test;
-    local $SIG{ALRM} = sub { confess("Subtest '${\ ($current_test // '?')}' timed out after ${timeout} seconds") };
-
     for my $test ($class->tests) {
-        $current_test = $test;
-        my $pid = fork // die "Could not fork: $!";
-        if ($pid) {
-            alarm $timeout;
-            waitpid($pid, 0);
-            alarm 0;
-            next;
-        }
-
-        my $ok  = eval { subtest $test => $class->can($test); 1 };
-        my $err = $@;
-        warn $err unless $ok;
-        exit($ok ? 0 : 255);
+        $class->_run_subtest_in_child($test);
     }
+}
+
+sub run_one {
+    my $class  = shift;
+    my %params = @_;
+
+    my $protocol = $params{protocol} or croak "'protocol' is required";
+    my $test     = $params{test}     or croak "'test' is required";
+
+    croak "No such test '$test'" unless $test =~ m/^test_/ && $class->can($test);
+
+    ipcm_default_protocol($protocol);
+
+    $class->_run_subtest_in_child($test);
+}
+
+sub _run_subtest_in_child {
+    my ($class, $test) = @_;
+
+    my $timeout = $ENV{IPC_MANAGER_TEST_TIMEOUT} || 180;
+    local $SIG{ALRM} = sub { confess("Subtest '$test' timed out after ${timeout} seconds") };
+
+    my $pid = fork // die "Could not fork: $!";
+    if ($pid) {
+        alarm $timeout;
+        waitpid($pid, 0);
+        alarm 0;
+        return;
+    }
+
+    my $ok  = eval { subtest $test => $class->can($test); 1 };
+    my $err = $@;
+    warn $err unless $ok;
+    exit($ok ? 0 : 255);
 }
 
 sub tests {

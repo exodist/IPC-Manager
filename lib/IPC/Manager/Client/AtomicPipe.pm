@@ -183,6 +183,87 @@ sub _outbox_try_write {
     return 1;
 }
 
+# Atomic::Pipe owns its own OUT_BUFFER, which IS the per-peer
+# queue. Role::Outbox's _OUTBOX would double-buffer the payload
+# (write_message pushes into OUT_BUFFER, then drain_pending replays
+# the same payload, which write_message then enqueues a SECOND
+# time). The next four methods bypass _OUTBOX and use OUT_BUFFER
+# directly so each payload reaches the kernel exactly once.
+
+sub try_send_message {
+    my $self = shift;
+
+    # Mirror send_message's call signature so callers can pass
+    # ($peer, \%content) and friends without having to serialize.
+    # The pre-serialized fast path is ($peer, $string).
+    my ($peer, $payload);
+    if (@_ >= 2 && ref($_[1]) eq '' && !ref($_[0])) {
+        ($peer, $payload) = @_;
+    }
+    else {
+        my $msg = $self->build_message(@_);
+        $peer    = $msg->to or croak "No peer specified";
+        $payload = $self->{+SERIALIZER}->serialize($msg);
+    }
+
+    $self->pid_check;
+    my $p = $self->_peer_pipe($peer)
+        or die "'$peer' is not a valid message recipient";
+
+    $p->write_message($payload);
+
+    return 0 if $p->pending_output;
+
+    $self->{+STATS}->{sent}->{$peer}++;
+    return 1;
+}
+
+sub drain_pending {
+    my $self = shift;
+
+    my $delivered = 0;
+    for my $p (values %{$self->{+PIPE_CACHE} // {}}) {
+        next unless $p->pending_output;
+        $p->flush;
+        $delivered++ unless $p->pending_output;
+    }
+    return $delivered;
+}
+
+sub pending_sends {
+    my $self = shift;
+    my $n = 0;
+    for my $p (values %{$self->{+PIPE_CACHE} // {}}) {
+        $n++ if $p->pending_output;
+    }
+    return $n;
+}
+
+sub pending_sends_to {
+    my ($self, $peer) = @_;
+    my $fifo = $self->peer_exists($peer) or return 0;
+    my $p = $self->{+PIPE_CACHE}->{$fifo} or return 0;
+    return $p->pending_output ? 1 : 0;
+}
+
+sub have_writable_handles {
+    my $self = shift;
+    for my $p (values %{$self->{+PIPE_CACHE} // {}}) {
+        return 1 if $p->pending_output;
+    }
+    return 0;
+}
+
+sub writable_handles {
+    my $self = shift;
+    my @h;
+    for my $p (values %{$self->{+PIPE_CACHE} // {}}) {
+        next unless $p->pending_output;
+        push @h => $p->wh;
+    }
+    return @h;
+}
+
 sub _outbox_writable_handle {
     my ($self, $peer) = @_;
     my $p = $self->_peer_pipe($peer) or return undef;
@@ -221,14 +302,9 @@ sub _drain_blocking {
 
     my $p = $self->_peer_pipe($peer) or return;
 
-    while ($self->{_OUTBOX}{$peer} && @{$self->{_OUTBOX}{$peer}}) {
-        my $entry = shift @{$self->{_OUTBOX}{$peer}};
-        my ($payload) = @$entry;
-        $p->write_message($payload);
-        $p->flush(blocking => 1);
-        $self->{+STATS}->{sent}->{$peer}++;
-    }
-    delete $self->{_OUTBOX}{$peer};
+    # AtomicPipe never populates _OUTBOX (the pipe's OUT_BUFFER is
+    # the queue). Flushing pending_output blocking drains it.
+    $p->flush(blocking => 1) if $p->pending_output;
 }
 
 1;

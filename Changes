@@ -1,5 +1,26 @@
 {{$NEXT}}
 
+    - Add IPC::Manager::Role::Outbox: per-peer non-blocking send queue
+      consumed by FIFO/datagram-socket clients. Services flip their client
+      to send_blocking=0 at startup; outbound sends that would EAGAIN are
+      queued and the service event loop drains them when the underlying
+      transport becomes writable. Memory- and DB-backed clients keep the
+      simple blocking send_message via a base-class no-op fallback.
+    - Client::AtomicPipe and Client::UnixSocket consume Role::Outbox.
+      Writer pipes/sockets are non-blocking when send_blocking=0 and
+      blocking when send_blocking=1 (the default for non-service
+      callers). send_message in either mode preserves the fire-and-die
+      semantics of earlier versions.
+    - Service::Select adds select_write() returning a fresh IO::Select
+      over the client's writable-with-backlog handles. Service::watch
+      now uses IO::Select->select($r, $w, undef, $cycle) so the loop
+      wakes on either readable or writable readiness.
+    - Client::AtomicPipe minimum bump for Atomic::Pipe: 0.025 (max_size
+      no longer silently fails to grow the FIFO buffer).
+    - Per-peer message order across the outbox is NOT preserved.
+      Documented in Role::Outbox POD. Callers that need strict order
+      must keep the client in send_blocking=1.
+
 0.000033  2026-04-25 01:47:50-07:00 America/Los_Angeles
 
     - Reset the IPC::Manager::Test->run_all alarm per subtest instead of using a single 180s budget for the whole sweep. On slow CPAN tester hardware the cumulative runtime in JSONFile-NoInotify mode exceeded 180s, firing SIGALRM mid-sweep regardless of which subtest was actually running and producing FAIL reports. Each subtest now gets its own 180s budget; the failure message names the subtest that timed out; an IPC_MANAGER_TEST_TIMEOUT environment variable overrides the default

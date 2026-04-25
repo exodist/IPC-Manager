@@ -73,6 +73,30 @@ sub write_stats  { croak "Not Implemented" }
 sub all_stats    { croak "Not Implemented" }
 sub _viable      { croak "Not Implemented" }
 
+# Outbox API defaults.
+#
+# Clients backed by memory or DB stores cannot EAGAIN at the
+# granularity of a single message; they get this no-op fallback so
+# service code can call the outbox API uniformly. Clients backed by
+# a kernel transport (FIFO, datagram socket) override these by
+# consuming IPC::Manager::Role::Outbox.
+sub try_send_message {
+    my $self = shift;
+    $self->send_message(@_);
+    return 1;
+}
+
+sub pending_sends         { 0 }
+sub pending_sends_to      { 0 }
+sub drain_pending         { 0 }
+sub have_writable_handles { 0 }
+sub writable_handles      { () }
+
+sub send_blocking     { 1 }
+sub set_send_blocking { return }
+
+sub can_send_to { 1 }
+
 sub viable {
     my $self_or_class = shift;
     my $class = blessed($self_or_class) || $self_or_class;

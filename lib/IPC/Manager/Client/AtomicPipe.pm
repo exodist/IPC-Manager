@@ -16,7 +16,10 @@ use Object::HashBase qw{
     +pipe_cache
 };
 
-sub _viable           { require Atomic::Pipe; Atomic::Pipe->VERSION('0.022'); 1 }
+use Role::Tiny::With;
+with 'IPC::Manager::Role::Outbox';
+
+sub _viable           { require Atomic::Pipe; Atomic::Pipe->VERSION('0.025'); 1 }
 sub suspend_supported { 0 }
 
 sub check_path { -p $_[1] }
@@ -133,19 +136,99 @@ sub peer_left {
     return $removed;
 }
 
+sub _peer_pipe {
+    my ($self, $peer) = @_;
+
+    my $fifo = $self->peer_exists($peer) or return undef;
+    return $self->{+PIPE_CACHE}->{$fifo} //= do {
+        my $w = Atomic::Pipe->write_fifo($fifo);
+        $w->write_blocking($self->send_blocking ? 1 : 0);
+        $w;
+    };
+}
+
+sub _outbox_set_blocking {
+    my ($self, $bool) = @_;
+    for my $p (values %{$self->{+PIPE_CACHE} // {}}) {
+        $p->write_blocking($bool ? 1 : 0);
+    }
+}
+
+sub _outbox_can_send {
+    my ($self, $peer) = @_;
+
+    my $p = $self->_peer_pipe($peer) or return 0;
+
+    require IO::Select;
+    my $s = IO::Select->new($p->wh);
+    return $s->can_write(0) ? 1 : 0;
+}
+
+sub _outbox_try_write {
+    my ($self, $peer, $payload) = @_;
+
+    $self->pid_check;
+    my $p = $self->_peer_pipe($peer)
+        or die "'$peer' is not a valid message recipient";
+
+    # Non-blocking write. write_message pushes into OUT_BUFFER and
+    # calls flush(). With write_blocking(0) on the underlying pipe,
+    # flush() partial-writes on EAGAIN and leaves the unwritten tail
+    # in OUT_BUFFER for a later drain_pending to resume.
+    $p->write_message($payload);
+
+    return 0 if $p->pending_output;
+
+    $self->{+STATS}->{sent}->{$peer}++;
+    return 1;
+}
+
+sub _outbox_writable_handle {
+    my ($self, $peer) = @_;
+    my $p = $self->_peer_pipe($peer) or return undef;
+    return $p->wh;
+}
+
+# send_message respects send_blocking. In blocking mode, drain any
+# backlog blocking, then write blocking. In non-blocking mode,
+# delegate to try_send_message.
 sub send_message {
     my $self = shift;
     my $msg  = $self->build_message(@_);
 
     my $peer_id = $msg->to or croak "No peer specified";
+    my $payload = $self->{+SERIALIZER}->serialize($msg);
 
     $self->pid_check;
-    my $fifo = $self->peer_exists($peer_id) or die "'$peer_id' is not a valid message recipient";
 
-    my $p = $self->{+PIPE_CACHE}->{$fifo} //= Atomic::Pipe->write_fifo($fifo);
-    $p->write_message($self->{+SERIALIZER}->serialize($msg));
+    if ($self->send_blocking) {
+        $self->_drain_blocking($peer_id) if $self->pending_sends_to($peer_id);
 
-    $self->{+STATS}->{sent}->{$msg->{to}}++;
+        my $p = $self->_peer_pipe($peer_id)
+            or die "'$peer_id' is not a valid message recipient";
+
+        $p->write_message($payload);
+        $p->flush(blocking => 1);
+        $self->{+STATS}->{sent}->{$peer_id}++;
+        return 1;
+    }
+
+    return $self->try_send_message($peer_id, $payload);
+}
+
+sub _drain_blocking {
+    my ($self, $peer) = @_;
+
+    my $p = $self->_peer_pipe($peer) or return;
+
+    while ($self->{_OUTBOX}{$peer} && @{$self->{_OUTBOX}{$peer}}) {
+        my $entry = shift @{$self->{_OUTBOX}{$peer}};
+        my ($payload) = @$entry;
+        $p->write_message($payload);
+        $p->flush(blocking => 1);
+        $self->{+STATS}->{sent}->{$peer}++;
+    }
+    delete $self->{_OUTBOX}{$peer};
 }
 
 1;

@@ -8,6 +8,7 @@ use POSIX();
 use Time::HiRes();
 
 use Carp qw/croak/;
+use Test2::Util::UUID qw/gen_uuid/;
 use IPC::Manager::Serializer::JSON();
 use IPC::Manager::Util qw/tinysleep/;
 
@@ -25,6 +26,7 @@ use Object::HashBase qw{
     <stash
     <pid
     <signal
+    <auth_key
 
     do_sanity_check
     debug
@@ -33,8 +35,9 @@ use Object::HashBase qw{
 sub init {
     my $self = shift;
 
-    $self->{+PID}   //= $$;
-    $self->{+GUARD} //= 1;
+    $self->{+PID}      //= $$;
+    $self->{+GUARD}    //= 1;
+    $self->{+AUTH_KEY} //= gen_uuid();
 
     croak "'protocol' is a required attribute"   unless $self->{+PROTOCOL};
     croak "'route' is a required attribute"      unless $self->{+ROUTE};

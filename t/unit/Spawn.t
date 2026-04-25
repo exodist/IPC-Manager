@@ -187,4 +187,20 @@ subtest 'shutdown cleans up' => sub {
     ok(!$PROTOCOL->peer_exists_in_store($route), "route removed after shutdown");
 };
 
+subtest auth_key => sub {
+    my $spawn = IPC::Manager::Spawn->new(
+        protocol   => 'IPC::Manager::Client::MessageFiles',
+        route      => '/tmp',
+        serializer => 'IPC::Manager::Serializer::JSON',
+        guard      => 0,
+    );
+
+    my $key = $spawn->auth_key;
+    like($key, qr/^[0-9a-fA-F-]{30,}$/, 'auth_key is a UUID-ish string');
+    is($spawn->auth_key, $key, 'auth_key is stable across calls');
+
+    my $info = $spawn->info;
+    unlike($info, qr/\Q$key\E/, 'auth_key is not in info()');
+};
+
 done_testing;

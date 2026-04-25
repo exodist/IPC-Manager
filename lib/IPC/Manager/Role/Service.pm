@@ -390,13 +390,28 @@ sub watch {
         my $reaped = $self->reap_children;
         $activity{pids} = $reaped if $reaped && keys %$reaped;
 
-        my $select = $self->select;
+        # Drain any queued outbound messages first; a previous
+        # iteration may have left bytes pending and the kernel may
+        # have made room while we were not looking.
+        $client->drain_pending if $client->pending_sends;
 
-        if ($select) {
-            if ($select->can_read($cycle)) {
+        my $select_r = $self->select;
+        my $select_w = $self->select_write;    # undef when no backlog
+
+        if ($select_r || $select_w) {
+            require IO::Select;
+            my ($r, $w) = IO::Select->select($select_r, $select_w, undef, $cycle);
+
+            if ($r && @$r) {
                 @messages = $client->get_messages;
                 $client->reset_handles_for_peer_change if $client->have_handles_for_peer_change;
             }
+
+            # If any writable handle fired, drain again. This is the
+            # portability path: on platforms where the FIFO buffer
+            # cannot grow past the kernel default, the loop wakes the
+            # moment room appears.
+            $client->drain_pending if $w && @$w;
         }
         else {
             @messages = $client->get_messages;
@@ -428,7 +443,7 @@ sub watch {
 
         return \%activity if keys %activity;
 
-        tinysleep($cycle) unless $select;
+        tinysleep($cycle) unless $select_r || $select_w;
     }
 }
 
@@ -445,6 +460,11 @@ sub run {
         my $key = "$sig";
         $SIG{$key} = sub { $sig_seen{$key}++ };
     }
+
+    # Inside a service, sends never block: the loop drains the outbox
+    # each iteration. Clients that do not consume Role::Outbox treat
+    # this as a no-op (default base-class implementation).
+    $self->client->set_send_blocking(0);
 
     my $start_res = $self->_run_on_start();
 

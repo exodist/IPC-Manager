@@ -2,7 +2,42 @@
 
 Date: 2026-04-25
 Branch: `service_socket_connection` (off `streaming_deadlock`)
+Parent base commit at branch creation: `989aa38` ("Client::AtomicPipe:
+bypass _OUTBOX, use Atomic::Pipe's OUT_BUFFER")
 Status: Draft for review
+
+## Parent-branch volatility
+
+`streaming_deadlock` is in flux while this work is in progress. The list of
+parent commits at branch-creation time is recorded here so a future rebase
+can detect changes that affect this design (especially anything touching
+`Role::Outbox`, non-blocking send paths, the service loop, or the
+`Client`/`Base::FS`/`Base::DBI` interface).
+
+`streaming_deadlock` tip when this branch was forked:
+
+```
+989aa38 Client::AtomicPipe: bypass _OUTBOX, use Atomic::Pipe's OUT_BUFFER
+ae3f29b Service: drain outbox before exit
+807dfd8 Revert "Service: do not auto-flip set_send_blocking on run"
+889b81b Reapply "Service: drain outbox each iteration; select on writable too"
+1d1d432 Reapply "Reapply "Client::UnixSocket: non-blocking sends via Role::Outbox""
+f9d7ec9 Reapply "Reapply "Client::AtomicPipe: non-blocking sends via Role::Outbox""
+77620fb Revert "Reapply "Client::AtomicPipe: non-blocking sends via Role::Outbox""
+001dc40 Revert "Reapply "Client::UnixSocket: non-blocking sends via Role::Outbox""
+e2e3ed4 Reapply "Client::UnixSocket: non-blocking sends via Role::Outbox"
+a7a922f Reapply "Client::AtomicPipe: non-blocking sends via Role::Outbox"
+760d993 Revert "Client::AtomicPipe: non-blocking sends via Role::Outbox"
+20e9ce2 Revert "Client::UnixSocket: non-blocking sends via Role::Outbox"
+e5a85dd Revert "Service: drain outbox each iteration; select on writable too"
+89830a4 Service: do not auto-flip set_send_blocking on run
+47dea48 Service: flip client to non-blocking AFTER _run_on_start
+```
+
+Before each rebase: diff `streaming_deadlock` against `989aa38` and verify
+that the assumptions in this design (Outbox shape, service-loop selectability,
+client base interface) still hold. Update this spec if any assumption is
+invalidated.
 
 ## Goal
 

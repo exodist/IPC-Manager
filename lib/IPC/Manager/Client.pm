@@ -132,6 +132,15 @@ sub init {
     croak "'id' may not begin with an underscore" if $id =~ m/^_/;
 
     $self->{+PID} //= $$;
+
+    # _creator_pid is the pid that originally constructed this
+    # client. It NEVER changes after init, even when init runs
+    # again post-fork (Object::HashBase calls init from the parent
+    # constructor; subclasses or post-fork resets may also run init
+    # later). DESTROY uses this to refuse FIFO/socket cleanup in a
+    # process that merely inherited the client object across fork.
+    $self->{_creator_pid} //= $$;
+
     $self->{+STATS} = $self->read_stats if $self->{+RECONNECT};
     $self->{+STATS} //= {read => {}, sent => {}};
 }
@@ -307,7 +316,11 @@ sub suspend {
 
 sub DESTROY {
     my $self = shift;
-    return unless $self->{+PID} && $self->{+PID} == $$;
+    # _creator_pid is sticky (set once in init, never overwritten on
+    # post-fork resets). +PID gets refreshed in forked children, so
+    # using it here would let DESTROY in a child unlink the FIFO/socket
+    # the parent still owns. Compare creator pid instead.
+    return unless $self->{_creator_pid} && $self->{_creator_pid} == $$;
     local $@;
     eval { $self->disconnect;  1 } or warn $@;
     eval { $self->write_stats; 1 } or warn $@ unless $self->{+DISCONNECTED};

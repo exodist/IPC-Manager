@@ -530,6 +530,21 @@ sub run {
 
     $self->_run_on_cleanup();
 
+    # Drain any queued outbound IPC sends before terminating
+    # workers / returning. Sends queued during the last loop
+    # iteration (e.g. the response to a 'terminate' request) must
+    # reach the peer before this process exits, or the caller will
+    # see 'peer went away while awaiting response'. Loop with a
+    # 5-second deadline so a wedged peer cannot wedge our exit.
+    {
+        my $client   = $self->client;
+        my $deadline = time + 5;
+        while ($client->pending_sends && time < $deadline) {
+            $client->drain_pending or last;
+            tinysleep(0.01) if $client->pending_sends;
+        }
+    }
+
     $self->terminate_workers();
 
     %SIG = %{$self->{_ORIG_SIG}};

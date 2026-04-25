@@ -20,13 +20,17 @@ sub run_all {
     my $protocol = $params{protocol} or croak "'protocol' is required";
     ipcm_default_protocol($protocol);
 
-    local $SIG{ALRM} = sub { confess("Test timed out after 180 seconds") };
-    alarm 180;
+    my $timeout = $ENV{IPC_MANAGER_TEST_TIMEOUT} || 180;
+    my $current_test;
+    local $SIG{ALRM} = sub { confess("Subtest '${\ ($current_test // '?')}' timed out after ${timeout} seconds") };
 
     for my $test ($class->tests) {
+        $current_test = $test;
         my $pid = fork // die "Could not fork: $!";
         if ($pid) {
+            alarm $timeout;
             waitpid($pid, 0);
+            alarm 0;
             next;
         }
 
@@ -35,8 +39,6 @@ sub run_all {
         warn $err unless $ok;
         exit($ok ? 0 : 255);
     }
-
-    alarm 0;
 }
 
 sub tests {

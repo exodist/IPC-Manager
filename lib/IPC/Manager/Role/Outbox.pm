@@ -4,6 +4,8 @@ use warnings;
 
 our $VERSION = '0.000034';
 
+use Carp qw/croak/;
+
 use Role::Tiny;
 
 requires qw{
@@ -20,11 +22,25 @@ requires qw{
 
 sub try_send_message {
     my $self = shift;
-    my ($peer, $payload, %fields) = @_;
 
-    return 1 if $self->_outbox_try_write($peer, $payload, %fields);
+    # Match send_message's call signature: caller may pass a Message
+    # object, ($peer, \%content) pair, or full %args. build_message
+    # + serializer produce the wire payload exactly the same way the
+    # blocking path does.
+    my ($peer, $payload);
+    if (@_ >= 2 && ref($_[1]) eq '' && !ref($_[0])) {
+        # Pre-serialized fast path: ($peer, $payload_string).
+        ($peer, $payload) = @_;
+    }
+    else {
+        my $msg = $self->build_message(@_);
+        $peer    = $msg->to or croak "No peer specified";
+        $payload = $self->serializer->serialize($msg);
+    }
 
-    push @{$self->{_OUTBOX}{$peer}} => [$payload, \%fields];
+    return 1 if $self->_outbox_try_write($peer, $payload);
+
+    push @{$self->{_OUTBOX}{$peer}} => [$payload];
     return 0;
 }
 

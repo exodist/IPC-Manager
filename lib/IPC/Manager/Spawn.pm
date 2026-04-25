@@ -2,7 +2,7 @@ package IPC::Manager::Spawn;
 use strict;
 use warnings;
 
-our $VERSION = '0.000033';
+our $VERSION = '0.000034';
 
 use POSIX();
 use Time::HiRes();

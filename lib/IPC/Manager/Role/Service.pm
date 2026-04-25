@@ -226,6 +226,10 @@ sub send_response {
 
     $payload{ipcm_error} = $error if defined $error;
 
+    # Inside a service the client is non-blocking. send_message
+    # honors send_blocking and dispatches through the outbox; the
+    # event loop drains. No call site needs to know which mode the
+    # client is in.
     $self->client->send_message($peer, \%payload);
 }
 

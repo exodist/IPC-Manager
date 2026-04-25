@@ -186,6 +186,56 @@ sub peer_pid_file {
     return File::Spec->catfile($self->{+ROUTE}, $self->on_disk_name($peer_id) . ".pid");
 }
 
+sub service_endpoint_file {
+    my $self = shift;
+    my ($peer_id) = @_;
+    $peer_id //= $self->{+ID};
+    return File::Spec->catfile($self->{+ROUTE}, $self->on_disk_name($peer_id) . ".service");
+}
+
+sub peer_service_endpoint {
+    my $self = shift;
+    my ($peer_id) = @_;
+    croak "'peer_id' is required" unless $peer_id;
+
+    my $file = $self->service_endpoint_file($peer_id);
+    return undef unless -e $file;
+
+    open(my $fh, '<', $file) or return undef;
+    my $body = do { local $/; <$fh> };
+    close($fh);
+
+    my $endpoint;
+    return undef unless eval { $endpoint = $self->{+SERIALIZER}->deserialize($body); 1 };
+    return $endpoint;
+}
+
+sub publish_service_endpoint {
+    my $self = shift;
+    my ($peer_id, $endpoint) = @_;
+    croak "'peer_id' is required"  unless $peer_id;
+    croak "'endpoint' is required" unless $endpoint && ref($endpoint) eq 'HASH';
+
+    my $file = $self->service_endpoint_file($peer_id);
+    my $pend = $file . ".pend";
+
+    open(my $fh, '>', $pend) or die "Could not open '$pend': $!";
+    print $fh $self->{+SERIALIZER}->serialize($endpoint);
+    close($fh);
+
+    rename($pend, $file) or die "Could not rename '$pend' -> '$file': $!";
+}
+
+sub retract_service_endpoint {
+    my $self = shift;
+    my ($peer_id) = @_;
+    $peer_id //= $self->{+ID};
+
+    my $file = $self->service_endpoint_file($peer_id);
+    return unless -e $file;
+    unlink($file) or warn "Could not unlink '$file': $!";
+}
+
 sub init {
     my $self = shift;
 
@@ -268,6 +318,7 @@ sub read_resume_file {
 sub post_disconnect_hook {
     my $self = shift;
     $self->SUPER::post_disconnect_hook;
+    $self->retract_service_endpoint($self->{+ID});
     my $path = eval { $self->path } // return;
     remove_tree($path, {keep_root => 0, safe => 1}) if -e $path;
 }
@@ -304,7 +355,7 @@ sub peers {
     for my $file (readdir($dh)) {
         next if $file eq $my_on_disk;
         next if $file =~ m/^(\.|_)/;
-        next if $file =~ m/\.(?:pid|name|resume|stats)$/;
+        next if $file =~ m/\.(?:pid|name|resume|stats|service)$/;
 
         my $path = File::Spec->catdir($self->{+ROUTE}, $file);
         next unless $self->check_path($path);

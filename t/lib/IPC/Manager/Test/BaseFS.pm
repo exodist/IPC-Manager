@@ -207,6 +207,33 @@ sub run_tests {
         $con->disconnect;
     };
 
+    subtest 'service_endpoint_sidecar' => sub {
+        my $dir = tempdir(CLEANUP => 1);
+
+        my $client = IPC::Manager::Client::MessageFiles->new(
+            id         => 'svc',
+            route      => $dir,
+            serializer => $SERIALIZER,
+        );
+
+        is($client->peer_service_endpoint('svc'), undef, 'no sidecar yet');
+
+        $client->publish_service_endpoint('svc', { type => 'unix', path => '/tmp/x.sock' });
+        is(
+            $client->peer_service_endpoint('svc'),
+            { type => 'unix', path => '/tmp/x.sock' },
+            'sidecar round-trips',
+        );
+
+        my @peers_with_self = sort($client->peers, $client->id);
+        ok(!grep(m/\.service$/, @peers_with_self), 'peers() ignores .service files');
+
+        $client->retract_service_endpoint('svc');
+        is($client->peer_service_endpoint('svc'), undef, 'retracted');
+
+        $client->disconnect;
+    };
+
     subtest 'long peer names survive round trip' => sub {
         my $dir = tempdir(CLEANUP => 1);
 

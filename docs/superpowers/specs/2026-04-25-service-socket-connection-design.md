@@ -290,9 +290,117 @@ composite reports the union of:
 
 - `main->handles_for_select` (if any),
 - listen socket (if a service is running here),
-- every per-peer stream socket currently established.
+- every per-peer stream socket currently established (read side, plus
+  write side for any stream whose Outbox has pending bytes),
+- every in-progress (post-accept, pre-HELLO-complete) inbound socket.
 
-Service code (`Role::Service`, `Service.pm`) is unchanged.
+#### Per-iteration responsibilities of `watch()`
+
+The existing `IPC::Manager::Role::Service::watch` loop must drive the
+service-socket layer too. Currently `watch` does (in order):
+
+1. `reap_children`
+2. `select->can_read($cycle)`
+3. `client->get_messages` if any handle was readable
+4. `peer_delta`
+5. interval check
+6. `pid_watch`
+
+In dual-driver mode, step 3 is replaced by an expanded sequence on the
+composite. After `can_read($cycle)` returns truthy:
+
+a. **Listener accept.** If the listen socket is in the readable set,
+   `service->accept_pending` is called. It loops `accept` non-blocking
+   until EAGAIN, registering each new fd as an "in-progress" connection
+   awaiting HELLO. Newly accepted fds are added to the next select set
+   so their HELLO frame can be read.
+
+b. **Handshake advance.** For every readable in-progress fd,
+   `service->advance_handshakes` reads as much as possible. When a HELLO
+   frame is fully decoded:
+   - validate `auth_key`; mismatch => close silently, drop fd
+   - check for an existing live stream to that peer id; if one exists,
+     apply the lower-`connection_uuid` rule and close the loser
+   - on accept, send HELLO_ACK, promote the fd to the per-peer stream
+     pool, record the peer id in the per-cycle "new connections"
+     accumulator
+   HELLO that does not arrive within the handshake timeout (default 2s
+   tracked by handshake-start time, checked each iteration) closes the fd.
+
+c. **Stream reads.** For every readable established stream,
+   `service->drain_stream` reads bytes into the per-stream buffer and
+   pulls every complete frame out as a deserialized
+   `IPC::Manager::Message`. Stream EOF or framing error closes the
+   stream and records its peer id in the per-cycle "lost connections"
+   accumulator.
+
+d. **Stream writes.** For every writable established stream whose
+   Outbox is non-empty, drain as many bytes as the kernel takes.
+
+e. **Main driver reads.** The composite's `get_messages` calls
+   `main->get_messages` and concatenates the result with the messages
+   collected in step c. The combined list is what `watch` puts in
+   `activity{messages}`.
+
+f. **Drain accumulators.** `service->take_new_connections` and
+   `service->take_lost_connections` return the per-cycle peer-id lists
+   accumulated in steps a/b and c. `watch` puts them in
+   `activity{new_connections}` and `activity{lost_connections}` (only
+   when non-empty).
+
+#### New activity-hash keys
+
+```
+{
+    ...existing keys...
+
+    # Arrayref of peer ids whose inbound stream completed HELLO this
+    # cycle. Set only when non-empty.
+    new_connections => ['svcClientA', 'svcClientB'],
+
+    # Arrayref of peer ids whose stream was closed (EOF, framing error,
+    # auth fail, or duplicate-race loss) this cycle. Set only when
+    # non-empty. Distinct from peer_delta: peer_delta reflects main-
+    # driver peer presence; lost_connections reflects only the stream
+    # layer.
+    lost_connections => ['svcClientC'],
+}
+```
+
+#### New role hooks
+
+Two optional callbacks are added to `IPC::Manager::Role::Service`,
+parallel to `on_peer_delta`:
+
+- `on_new_connection` - called once per peer id in
+  `activity{new_connections}`.
+- `on_lost_connection` - called once per peer id in
+  `activity{lost_connections}`.
+
+Default implementations are no-ops. `IPC::Manager::Service` exposes
+matching constructor params and `push_*` / `clear_*` accessors using
+the same code-generation pattern as the existing `@ACTIONS` list.
+
+`Role::Service::run` consumes the new keys after `pid_watch` and before
+`messages`, dispatching the callbacks via `_run_on_new_connection` and
+`_run_on_lost_connection` (matching the existing `_run_on_*` wrapper
+pattern that goes through `try`).
+
+#### Files affected by this section
+
+- `IPC::Manager::Role::Service::watch`: replace the single
+  `client->get_messages` call with the expanded sequence above; populate
+  the two new activity keys.
+- `IPC::Manager::Role::Service::run`: dispatch the two new keys.
+- `IPC::Manager::Role::Service`: add `on_new_connection` and
+  `on_lost_connection` to the role's `requires`/default-no-op set.
+- `IPC::Manager::Service`: extend `@ACTIONS` with
+  `on_new_connection` and `on_lost_connection`.
+- `IPC::Manager::Client::Composite`: provide
+  `accept_pending`, `advance_handshakes`, `drain_stream`,
+  `take_new_connections`, `take_lost_connections`. The first three may
+  be implemented on `Base::ServiceSocket` and exposed through the
+  composite.
 
 ### Service startup flow
 
@@ -475,6 +583,13 @@ Tests live alongside existing protocol tests:
   - one client connected to multiple services concurrently: send to svcA,
     svcB, svcC in interleaved order, verify per-peer ordering and that no
     stream blocks another
+  - `on_new_connection` callback fires with the correct peer id when a
+    client connects to a service, before any messages from that peer are
+    delivered
+  - `on_lost_connection` callback fires when a stream closes (peer EOF,
+    framing error, auth fail) and is independent of `on_peer_delta`
+  - `activity{new_connections}` and `activity{lost_connections}` keys
+    appear in `on_all` only on cycles where they are non-empty
   - one service accepting from multiple clients concurrently: each client
     sends a request, all get correct responses on their own streams
   - service-to-service messaging
@@ -516,6 +631,14 @@ Modified:
   `peer_service_endpoint` (read `.service`), `publish_service_endpoint`
   (write `.service`), and clean it up in `post_disconnect_hook`.
 - `lib/IPC/Manager/Base/DBI.pm`: same, against the peer table column.
+- `lib/IPC/Manager/Role/Service.pm`: expand `watch()` (accept_pending,
+  advance_handshakes, drain_stream, write-side drain, take_*_connections),
+  add new activity keys `new_connections` and `lost_connections`, dispatch
+  them in `run()` via `_run_on_new_connection` / `_run_on_lost_connection`,
+  add no-op defaults `run_on_new_connection` / `run_on_lost_connection`.
+- `lib/IPC/Manager/Service.pm`: add `on_new_connection` and
+  `on_lost_connection` to `@ACTIONS` so the existing accessor codegen
+  produces `push_*` / `clear_*` / `run_*` for them.
 
 Companion update (per CLAUDE.md): mirror any base-class changes into
 `../IPC-Manager-Client-SharedMem/` if the `Client` interface changes

@@ -465,12 +465,14 @@ sub run {
         $SIG{$key} = sub { $sig_seen{$key}++ };
     }
 
-    # Inside a service, sends never block: the loop drains the outbox
-    # each iteration. Clients that do not consume Role::Outbox treat
-    # this as a no-op (default base-class implementation).
-    $self->client->set_send_blocking(0);
-
     my $start_res = $self->_run_on_start();
+
+    # Inside the service event loop, sends never block: the loop
+    # drains the outbox each iteration when needed. Clients that do
+    # not consume Role::Outbox treat this as a no-op. Done AFTER
+    # _run_on_start so startup-time sends keep the simpler
+    # synchronous semantics that custom services may depend on.
+    $self->client->set_send_blocking(0);
 
     # If there was an exception on startup we do not keep going
     die "Exception in process startup, aborting" unless $start_res->{ok};

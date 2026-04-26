@@ -8,26 +8,31 @@ single feature branch.
 The streaming_deadlock branch grew a `have_pending_sends` boolean fast
 path next to `pending_sends` because the service event loop only ever
 needed "is there anything queued?" but `pending_sends` walks every
-peer summing queue depths. Sweep the rest of the codebase for the same
-shape:
+peer summing queue depths. Same shape may exist elsewhere — accessor
+that loops to compute a count, callers that use the result only as
+truthy/falsy.
 
-- accessor that loops over peers / files / handles to compute a count
-- callers that use the result only as truthy/falsy (`if $foo->count`,
-  `while $foo->count && ...`, `... unless $foo->count`)
-- consider adding `have_$thing` sibling that returns on the first hit
+### Audit results (2026-04-26)
 
-Hotspots to look at first:
+Reviewed:
 
-- `IPC::Manager::Client` and its drivers: `peers`, `connections`,
-  `listening_peers`, `pending_messages`, `ready_messages`, anything
-  named `..._stats`, anything that scans `+CONNECTIONS` / `+PIPE_CACHE`
-  / `+SOCKET_CACHE`.
-- `IPC::Manager::Role::Service::Select::handles_for_select` and the
-  driver overrides — consumed both as "are there any?" and as the
-  full list.
-- `IPC::Manager::Role::Service` and `IPC::Manager::Service::Handle`
-  bookkeeping (`workers`, `pending_responses`, etc.).
+- `pending_messages` — already short-circuits via `return 1 if ...`
+  in every implementation. Boolean already.
+- `peers`, `connections`, `listening_peers`, `messages`, `all_stats`,
+  `workers` — return lists/hashes for iteration; no production
+  boolean call sites found.
+- `handles_for_select` — paired with `have_handles_for_select`
+  (constant per-driver) since long before this audit. Done.
+- `pending_responses` family — `have_pending_responses` exists.
+- `pending_sends` — `have_pending_sends` added in
+  streaming_deadlock work.
+- `_gone_pending_peers` (Service::Handle) — found one boolean caller
+  in `await_all_responses` that used the list only to check `if
+  (@gone)` and called the method again later for the names.
+  `_have_gone_pending_peers` short-circuits on first hit; matters
+  here because each iteration calls `_pending_peer_active` which
+  can hit the FS / DB.
 
-Pattern is cheap when peer counts are small but pathological in
-services with many peers, especially when called from a tight event
-loop iteration.
+### Remaining
+
+None known. Re-audit when adding new loop-shaped accessors.

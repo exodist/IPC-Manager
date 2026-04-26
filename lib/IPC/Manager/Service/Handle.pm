@@ -156,13 +156,12 @@ sub await_all_responses {
     my $deadline = defined($timeout) ? time + $timeout : undef;
 
     while ($self->have_pending_responses) {
-        my @gone = $self->_gone_pending_peers;
-        if (@gone) {
+        if ($self->_have_gone_pending_peers) {
             # Drain once more in case responses raced peer disappearance.
             $self->poll(0);
             last unless $self->have_pending_responses;
 
-            @gone = $self->_gone_pending_peers;
+            my @gone = $self->_gone_pending_peers;
             if (@gone) {
                 my %seen;
                 my @uniq = grep { !$seen{$_}++ } map { $_->[0] } @gone;
@@ -201,6 +200,25 @@ sub _gone_pending_peers {
             unless $self->_pending_peer_active($entry->{peer}, $entry->{pid});
     }
     return @gone;
+}
+
+# Boolean fast path for "is any pending response's peer gone?".  Short-
+# circuits on the first hit so we skip _pending_peer_active probes (which
+# can hit the FS / DB) for every other pending response.  Use this when
+# the caller only needs the yes/no; collect names via _gone_pending_peers
+# only after this confirms there is at least one.
+sub _have_gone_pending_peers {
+    my $self = shift;
+
+    for my $entry (values %{$self->{_RESPONSES} // {}}) {
+        next if defined $entry->{response};
+        return 1 unless $self->_pending_peer_active($entry->{peer}, $entry->{pid});
+    }
+    for my $entry (values %{$self->{_RESPONSE_HANDLER} // {}}) {
+        next unless defined $entry;
+        return 1 unless $self->_pending_peer_active($entry->{peer}, $entry->{pid});
+    }
+    return 0;
 }
 
 sub messages {

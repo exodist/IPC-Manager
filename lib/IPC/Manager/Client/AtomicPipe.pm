@@ -16,7 +16,7 @@ use Object::HashBase qw{
     +pipe_cache
 };
 
-sub _viable           { require Atomic::Pipe; Atomic::Pipe->VERSION('0.022'); 1 }
+sub _viable           { require Atomic::Pipe; Atomic::Pipe->VERSION('0.026'); 1 }
 sub suspend_supported { 0 }
 
 sub check_path { -p $_[1] }

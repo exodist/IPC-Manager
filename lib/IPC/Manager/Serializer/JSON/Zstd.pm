@@ -7,6 +7,18 @@ our $VERSION = '0.000034';
 use parent 'IPC::Manager::Serializer::JSON';
 
 use Carp qw/croak/;
+use Scalar::Util qw/blessed/;
+
+use Object::HashBase qw{
+    <level
+    <dictionary
+    +cctx
+    +dctx
+    +cdict
+    +ddict
+};
+
+use constant DEFAULT_LEVEL => 3;
 
 my $HAVE_ZSTD;
 
@@ -17,21 +29,80 @@ sub _have_zstd {
 
 sub viable { _have_zstd() }
 
-sub serialize {
-    my ($class, $obj) = @_;
+sub init {
+    my $self = shift;
+
     croak "Compress::Zstd 0.20 or newer is required for IPC::Manager::Serializer::JSON::Zstd"
         unless _have_zstd();
-    my $json = $class->SUPER::serialize($obj);
-    return Compress::Zstd::compress($json);
+
+    $self->{+LEVEL} //= DEFAULT_LEVEL;
+
+    if (defined $self->{+DICTIONARY}) {
+        require Compress::Zstd::CompressionContext;
+        require Compress::Zstd::DecompressionContext;
+        require Compress::Zstd::CompressionDictionary;
+        require Compress::Zstd::DecompressionDictionary;
+
+        $self->{+CDICT} = Compress::Zstd::CompressionDictionary->new_from_file($self->{+DICTIONARY}, $self->{+LEVEL})
+            or croak "Could not load zstd compression dictionary from '$self->{+DICTIONARY}'";
+        $self->{+DDICT} = Compress::Zstd::DecompressionDictionary->new_from_file($self->{+DICTIONARY})
+            or croak "Could not load zstd decompression dictionary from '$self->{+DICTIONARY}'";
+        $self->{+CCTX} = Compress::Zstd::CompressionContext->new;
+        $self->{+DCTX} = Compress::Zstd::DecompressionContext->new;
+    }
+
+    return $self;
+}
+
+sub serialize {
+    my ($invocant, $obj) = @_;
+
+    croak "Compress::Zstd 0.20 or newer is required for IPC::Manager::Serializer::JSON::Zstd"
+        unless _have_zstd();
+
+    my $json = $invocant->SUPER::serialize($obj);
+
+    if (blessed $invocant) {
+        if ($invocant->{+CCTX}) {
+            my $bytes = $invocant->{+CCTX}->compress_using_dict($json, $invocant->{+CDICT});
+            croak "Failed to compress payload with zstd dictionary" unless defined $bytes;
+            return $bytes;
+        }
+        my $bytes = Compress::Zstd::compress($json, $invocant->{+LEVEL});
+        croak "Failed to compress payload with zstd" unless defined $bytes;
+        return $bytes;
+    }
+
+    my $bytes = Compress::Zstd::compress($json, DEFAULT_LEVEL);
+    croak "Failed to compress payload with zstd" unless defined $bytes;
+    return $bytes;
 }
 
 sub deserialize {
-    my ($class, $bytes) = @_;
+    my ($invocant, $bytes) = @_;
+
     croak "Compress::Zstd 0.20 or newer is required for IPC::Manager::Serializer::JSON::Zstd"
         unless _have_zstd();
-    my $json = Compress::Zstd::decompress($bytes);
+
+    my $json;
+    if (blessed($invocant) && $invocant->{+DCTX}) {
+        $json = $invocant->{+DCTX}->decompress_using_dict($bytes, $invocant->{+DDICT});
+    }
+    else {
+        $json = Compress::Zstd::decompress($bytes);
+    }
+
     croak "Failed to decompress zstd payload" unless defined $json;
-    return $class->SUPER::deserialize($json);
+
+    return $invocant->SUPER::deserialize($json);
+}
+
+sub TO_JSON {
+    my $self = shift;
+    my @args;
+    push @args, level      => $self->{+LEVEL}      if defined $self->{+LEVEL}      && $self->{+LEVEL} != DEFAULT_LEVEL;
+    push @args, dictionary => $self->{+DICTIONARY} if defined $self->{+DICTIONARY};
+    return [ref($self), @args];
 }
 
 1;
@@ -57,13 +128,26 @@ When L<Compress::Zstd> 0.20 or newer is installed C<JSON::Zstd> is selected as
 the default serializer for L<IPC::Manager>. If C<Compress::Zstd> is missing or
 older, IPC::Manager falls back to L<IPC::Manager::Serializer::JSON>.
 
+The class methods C<serialize>/C<deserialize> use C<Compress::Zstd>'s default
+compression level (3) and no preset dictionary. To configure a custom
+compression level or use a preset dictionary, construct an instance via
+C<new(level =E<gt> $level, dictionary =E<gt> $path)> and call the same methods
+on it. Instances are cached by L<IPC::Manager> when specified through the
+arrayref form in C<ipcm_spawn> / C<ipcm_connect>, so each unique
+C<[$class, %args]> spec produces a single shared serializer object that
+peer connections reuse.
+
 =head1 SYNOPSIS
 
     use IPC::Manager;
 
+    # Class form (default level, no dictionary)
     my $ipcm = ipcm_spawn(serializer => 'JSON::Zstd');
 
-    my $con = IPC::Manager::Client::PROTOCOL->connect($id, 'JSON::Zstd');
+    # Arrayref form (custom level and/or dictionary)
+    my $ipcm = ipcm_spawn(
+        serializer => ['JSON::Zstd', level => 9, dictionary => '/path/to/dict'],
+    );
 
 =head1 METHODS
 
@@ -74,15 +158,39 @@ older, IPC::Manager falls back to L<IPC::Manager::Serializer::JSON>.
 Returns true when L<Compress::Zstd> 0.20 or newer is loadable, false
 otherwise.
 
+=item $self = IPC::Manager::Serializer::JSON::Zstd->new(%args)
+
+Construct a configured serializer instance. Recognized arguments:
+
+=over 4
+
+=item level => $integer
+
+Zstd compression level. Defaults to C<3> (Compress::Zstd's library default).
+
+=item dictionary => $path
+
+Path to a zstd preset dictionary file. Both endpoints must have access to a
+dictionary at the same path with the same content. When set, the constructor
+loads the file once and reuses it for every C<serialize>/C<deserialize> call.
+
+=back
+
+=item $bytes = $serializer->serialize($obj)
+
 =item $bytes = IPC::Manager::Serializer::JSON::Zstd->serialize($obj)
 
-JSON-encode C<$obj> and zstd-compress the result. Croaks if
-L<Compress::Zstd> is not available.
+JSON-encode C<$obj> and zstd-compress the result. The class form uses default
+level 3 and no dictionary; the instance form honours the C<level> and
+C<dictionary> the instance was built with.
+
+=item $obj = $serializer->deserialize($bytes)
 
 =item $obj = IPC::Manager::Serializer::JSON::Zstd->deserialize($bytes)
 
-Zstd-decompress C<$bytes> and JSON-decode the result. Croaks if
-L<Compress::Zstd> is not available, or if decompression fails.
+Zstd-decompress C<$bytes> and JSON-decode the result. The class form expects
+input produced without a dictionary; the instance form decodes with the
+instance's dictionary if one was configured.
 
 =back
 

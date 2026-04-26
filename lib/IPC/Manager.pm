@@ -128,14 +128,22 @@ sub ipcm_default_protocol_list {
     return $default;
 }
 
+sub _pick_default_serializer {
+    return 'JSON::Zstd'
+        if eval { require IPC::Manager::Serializer::JSON::Zstd; IPC::Manager::Serializer::JSON::Zstd->viable };
+    return 'JSON';
+}
+
 sub ipcm_default_serializer {
-    state $default = 'JSON';
+    state $default;
 
     if (@_) {
         my $serializer = _parse_serializer(@_);
         require_mod($serializer);
         $default = $serializer;
     }
+
+    $default //= _pick_default_serializer();
 
     return $default;
 }
@@ -278,8 +286,8 @@ Default set of protocols to try, in the order they should be tried.
 
 =item ipcm_default_serializer($serializer)
 
-Get or set the default serializer. 'JSON' is the default unless this is
-changed.
+Get or set the default serializer. The default is C<'JSON::Zstd'> when
+L<Compress::Zstd> 0.20 or newer is installed, otherwise C<'JSON'>.
 
 =item $ipcm = ipcm_spawn()
 

@@ -165,7 +165,7 @@ sub test_generic {
     is($info, $guard->info, "Stringifies");
     like(
         IPC::Manager::Serializer::JSON->deserialize($info),
-        [ipcm_default_protocol(), "IPC::Manager::Serializer::JSON", $guard->route],
+        [ipcm_default_protocol(), $guard->serializer, $guard->route],
         "Got a useful info string"
     );
     note("Info: $info");

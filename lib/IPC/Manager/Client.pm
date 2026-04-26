@@ -57,6 +57,13 @@ sub have_ready_messages   { croak "Not Implemented" }
 sub have_handles_for_select { 0 }
 sub handles_for_select      { croak "Not Implemented" }
 
+# When a client multiplexes a dynamic set of handles (sockets accepted at
+# runtime, etc.) consumers of handles_for_select cannot cache an IO::Select
+# object: handles added after the cache was built would be missed.  Clients
+# that mutate their handle set during normal operation should override this
+# to return true so consumers know to rebuild.
+sub have_dynamic_handles_for_select { 0 }
+
 sub suspend_supported             { 1 }
 sub have_handles_for_peer_change  { 0 }
 sub reset_handles_for_peer_change { croak "Not Implemented" }

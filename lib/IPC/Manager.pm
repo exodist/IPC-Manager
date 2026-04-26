@@ -108,6 +108,7 @@ sub ipcm_default_protocol_list {
     state $default = [
         'AtomicPipe',
         'UnixSocket',
+        'ConnectionUnix',
         'SQLite',
         'PostgreSQL',
         'MariaDB',
@@ -422,6 +423,16 @@ L<IPC::Manager::Client::UnixSocket>
 This uses a directory as the 'route'. This uses unix sockets, one per client.
 Messages are sent by writing them to the correct clients socket.  (Multiple
 writer, single reader).
+
+=item ConnectionUnix
+
+L<IPC::Manager::Client::ConnectionUnix>
+
+Like UnixSocket but uses C<SOCK_STREAM> connection-oriented UNIX sockets.
+Each client either listens for incoming connections (default) or registers as
+a non-listener and may only be reached via connections it has itself
+initiated.  Per-connection management methods are provided by
+L<IPC::Manager::Role::Client::Connection>.
 
 =back
 

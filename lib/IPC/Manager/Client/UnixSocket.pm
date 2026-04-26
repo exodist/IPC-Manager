@@ -146,7 +146,7 @@ sub _outbox_try_write {
     my $s = $self->_peer_socket($peer)
         or die "'$peer' is not a valid message recipient";
 
-    my $rc = $s->send("$payload\n");
+    my $rc = $s->send($payload);
     if (defined $rc) {
         $self->{+STATS}->{sent}->{$peer}++;
         return 1;
@@ -175,7 +175,7 @@ sub send_message {
         my $s = $self->_peer_socket($peer_id)
             or die "'$peer_id' is not a valid message recipient";
 
-        $s->send("$payload\n") or die "Cannot send message: $!";
+        $s->send($payload) or die "Cannot send message: $!";
         $self->{+STATS}->{sent}->{$peer_id}++;
         return 1;
     }
@@ -191,7 +191,7 @@ sub _drain_blocking {
     while ($self->{_OUTBOX}{$peer} && @{$self->{_OUTBOX}{$peer}}) {
         my $entry = shift @{$self->{_OUTBOX}{$peer}};
         my ($payload) = @$entry;
-        $s->send("$payload\n") or die "Cannot send message: $!";
+        $s->send($payload) or die "Cannot send message: $!";
         $self->{+STATS}->{sent}->{$peer}++;
     }
     delete $self->{_OUTBOX}{$peer};

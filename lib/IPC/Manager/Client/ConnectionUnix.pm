@@ -2,7 +2,7 @@ package IPC::Manager::Client::ConnectionUnix;
 use strict;
 use warnings;
 
-our $VERSION = '0.000034';
+our $VERSION = '0.000035';
 
 use Carp qw/croak/;
 use Errno qw/EAGAIN EWOULDBLOCK EINTR/;

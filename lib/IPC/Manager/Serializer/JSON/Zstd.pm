@@ -2,7 +2,7 @@ package IPC::Manager::Serializer::JSON::Zstd;
 use strict;
 use warnings;
 
-our $VERSION = '0.000034';
+our $VERSION = '0.000035';
 
 use parent 'IPC::Manager::Serializer::JSON';
 

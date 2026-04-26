@@ -2,7 +2,7 @@ package IPC::Manager::Role::Client::Connection;
 use strict;
 use warnings;
 
-our $VERSION = '0.000034';
+our $VERSION = '0.000035';
 
 use Time::HiRes qw/time/;
 

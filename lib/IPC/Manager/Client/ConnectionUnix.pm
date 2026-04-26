@@ -210,6 +210,11 @@ sub _flush_send_buffer {
 sub _drain_reads {
     my ($self, $fh, $buf_ref) = @_;
 
+    # During global destruction perl may have already destroyed the
+    # IO::Socket::UNIX in $entry->{fh} before our Client's DESTROY runs
+    # disconnect.  Treat a missing handle as already-closed.
+    return 1 unless defined $fh;
+
     # Pull everything currently readable on $fh into the caller's buffer
     # without blocking, and report whether the peer has closed.  Caller is
     # responsible for slicing complete frames out of the buffer afterwards

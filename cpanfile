@@ -23,7 +23,7 @@ requires "overload" => "0";
 requires "parent" => "0";
 requires "perl" => "5.012000";
 recommends "Digest::SHA" => "0";
-suggests "Atomic::Pipe" => "0.022";
+suggests "Atomic::Pipe" => "0.026";
 suggests "DBD::MariaDB" => "1.00";
 suggests "DBD::Pg" => "v3.5.0";
 suggests "DBD::mysql" => "4.00";
@@ -45,7 +45,7 @@ on 'configure' => sub {
 };
 
 on 'develop' => sub {
-  requires "Atomic::Pipe" => "0.022";
+  requires "Atomic::Pipe" => "0.026";
   requires "DBD::MariaDB" => "1.00";
   requires "DBD::Pg" => "v3.5.0";
   requires "DBD::mysql" => "4.00";

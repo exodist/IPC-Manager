@@ -22,6 +22,7 @@ requires "UUID" => "0.35";
 requires "overload" => "0";
 requires "parent" => "0";
 requires "perl" => "5.012000";
+recommends "Compress::Zstd" => "0.20";
 recommends "Digest::SHA" => "0";
 suggests "Atomic::Pipe" => "0.026";
 suggests "DBD::MariaDB" => "1.00";

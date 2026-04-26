@@ -46,7 +46,7 @@ my %WriteMakefileArgs = (
   },
   "VERSION" => "0.000034",
   "test" => {
-    "TESTS" => "t/AtomicPipe/*.t t/JSONFile-Inotify/*.t t/JSONFile-NoInotify/*.t t/MariaDB/*.t t/MessageFiles-Inotify/*.t t/MessageFiles-NoInotify/*.t t/MySQL/*.t t/PostgreSQL/*.t t/SQLite/*.t t/UnixSocket/*.t t/unit/*.t"
+    "TESTS" => "t/*.t t/AtomicPipe/*.t t/ConnectionUnix/*.t t/JSONFile-Inotify/*.t t/JSONFile-NoInotify/*.t t/MariaDB/*.t t/MessageFiles-Inotify/*.t t/MessageFiles-NoInotify/*.t t/MySQL/*.t t/PostgreSQL/*.t t/SQLite/*.t t/UnixSocket/*.t t/unit/*.t"
   }
 );
 

@@ -6,6 +6,7 @@ use File::Spec;
 use Time::HiRes qw/time sleep/;
 
 use IPC::Manager::Client::ConnectionUnix;
+use IPC::Manager::Message;
 use IPC::Manager::Serializer::JSON;
 
 my $CLASS      = 'IPC::Manager::Client::ConnectionUnix';
@@ -197,7 +198,7 @@ subtest 'role API' => sub {
     $b->disconnect;
 };
 
-subtest 'reconnect once on dead fd' => sub {
+subtest 'dead fd: send fails, next send reconnects' => sub {
     my $dir = tempdir(CLEANUP => 1);
     my $a = $CLASS->new(serializer => $SERIALIZER, route => $dir, id => 'a');
     my $b = $CLASS->new(serializer => $SERIALIZER, route => $dir, id => 'b');
@@ -206,16 +207,21 @@ subtest 'reconnect once on dead fd' => sub {
     drain_until($b, 1);
     ok($a->has_connection('b'), 'connection cached');
 
-    # Brutally close the fd from a's side without removing the cache entry,
-    # forcing the next send to detect the dead fd and reconnect.
+    # Brutally close the fd from a's side without removing the cache entry.
+    # The next send must fail on the dead fd; auto-reconnect is no longer
+    # done, so the caller has to send again to pick up a fresh connection.
     my $fh = $a->_connections->{b}->{fh};
     close($fh);
 
     my $ok = eval { $a->send_message(b => 'after-reset'); 1 };
-    ok($ok, 'second send succeeded via reconnect') or diag $@;
+    ok(!$ok, 'first send to dead fd failed (no auto-reconnect)');
+    ok(!$a->has_connection('b'), 'dead entry was dropped on the failure');
+
+    $ok = eval { $a->send_message(b => 'after-reset'); 1 };
+    ok($ok, 'second send established a fresh connection') or diag $@;
 
     my @msgs = drain_until($b, 1);
-    is(scalar @msgs, 1, 'message arrived after reconnect');
+    is(scalar @msgs, 1, 'message arrived on the fresh connection');
     is($msgs[0]->content, 'after-reset', 'content matches');
 
     $a->disconnect;
@@ -252,6 +258,72 @@ subtest 'listening_peers and peer_is_listener' => sub {
     $a->disconnect;
     $b->disconnect;
     $c->disconnect;
+};
+
+subtest 'send_blocking=0 routes through outbox / drain_pending' => sub {
+    my $dir = tempdir(CLEANUP => 1);
+    my $a = $CLASS->new(serializer => $SERIALIZER, route => $dir, id => 'a');
+    my $b = $CLASS->new(serializer => $SERIALIZER, route => $dir, id => 'b');
+
+    ok($a->send_blocking, 'send_blocking defaults to 1');
+    is($a->pending_sends, 0, 'no backlog initially');
+
+    $a->set_send_blocking(0);
+    ok(!$a->send_blocking, 'flipped to non-blocking');
+
+    $a->send_message(b => {hi => 'there'});
+
+    is($a->pending_sends, 0, 'tiny send committed without backlog');
+
+    my @msgs = drain_until($b, 1);
+    is(scalar @msgs, 1, 'reached b');
+    is($msgs[0]->content, {hi => 'there'}, 'content');
+
+    is($a->drain_pending, 0, 'drain_pending no-op when empty');
+
+    $a->disconnect;
+    $b->disconnect;
+};
+
+subtest 'queued frame in send_buffer drains to peer intact' => sub {
+    my $dir = tempdir(CLEANUP => 1);
+    my $a = $CLASS->new(serializer => $SERIALIZER, route => $dir, id => 'a');
+    my $b = $CLASS->new(serializer => $SERIALIZER, route => $dir, id => 'b');
+
+    $a->set_send_blocking(0);
+
+    # Open a connection by sending a real message first.
+    $a->send_message(b => {warm => 'up'});
+    drain_until($b, 1);
+
+    my $entry = $a->_connections->{b};
+    ok($entry, 'have cached connection to b');
+    is($entry->{send_buffer}, '', 'send_buffer empty after warm-up');
+
+    # Stuff a complete, valid frame into send_buffer to simulate a
+    # partial syswrite leaving leftover bytes for the event loop.
+    my $payload = $a->serializer->serialize(IPC::Manager::Message->new({
+        from    => 'a',
+        to      => 'b',
+        content => {queued => 1},
+    }));
+    $entry->{send_buffer} = pack('N', length $payload) . $payload;
+
+    is($a->pending_sends, 1, 'pending_sends sees the buffer');
+    ok($a->have_writable_handles, 'have_writable_handles true');
+    is([$a->writable_handles], [$entry->{fh}], 'writable_handles returns fh');
+    ok(!$a->_outbox_can_send('b'), 'can_send false while backlog present');
+
+    is($a->drain_pending, 1, 'drain_pending reports one peer drained');
+    is($entry->{send_buffer}, '', 'send_buffer empty');
+    is($a->pending_sends, 0, 'pending_sends back to zero');
+
+    my @msgs = drain_until($b, 1);
+    is(scalar @msgs, 1, 'queued frame reached b');
+    is($msgs[0]->content, {queued => 1}, 'content intact through outbox');
+
+    $a->disconnect;
+    $b->disconnect;
 };
 
 done_testing;

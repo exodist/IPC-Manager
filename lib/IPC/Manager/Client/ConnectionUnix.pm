@@ -16,6 +16,7 @@ use IPC::Manager::Util qw/USE_IO_SELECT/;
 use parent 'IPC::Manager::Base::FS';
 use Role::Tiny::With;
 with 'IPC::Manager::Role::Client::Connection';
+with 'IPC::Manager::Role::Outbox';
 
 use Object::HashBase qw{
     listen
@@ -181,6 +182,31 @@ sub _send_frame {
     }
 }
 
+# Non-blocking: drain as much of $entry->{send_buffer} as the kernel will
+# accept right now, then return.  Stops on EAGAIN/EWOULDBLOCK without
+# blocking; retries on EINTR; raises on any other error.
+sub _flush_send_buffer {
+    my ($self, $entry) = @_;
+    my $fh = $entry->{fh} or return 0;
+
+    while (length $entry->{send_buffer}) {
+        my $n;
+        {
+            no warnings 'closed', 'unopened';
+            $n = syswrite($fh, $entry->{send_buffer});
+        }
+        if (defined $n) {
+            substr($entry->{send_buffer}, 0, $n) = '';
+            next;
+        }
+        last if $! == EAGAIN || $! == EWOULDBLOCK;
+        next if $! == EINTR;
+        die "write failed: $!";
+    }
+
+    return length($entry->{send_buffer}) ? 0 : 1;
+}
+
 sub _drain_reads {
     my ($self, $fh, $buf_ref) = @_;
 
@@ -251,9 +277,9 @@ sub _connect_to_peer {
         last_active  => time,
         role         => 'initiator',
         read_buffer  => '',
+        send_buffer  => '',
         sent_hello   => 0,
         recv_hello   => 1,    # we initiated; we know who they are by definition
-        retry_used   => 0,
     };
 
     # Send hello frame first.
@@ -282,9 +308,9 @@ sub _accept_pending {
             last_active  => time,
             role         => 'listener',
             read_buffer  => '',
+            send_buffer  => '',
             sent_hello   => 0,
             recv_hello   => 0,
-            retry_used   => 0,
             _pending_key => $tmp_key,
         };
     }
@@ -475,6 +501,14 @@ sub send_message {
 
     my $payload = $self->{+SERIALIZER}->serialize($msg);
 
+    # Inside a service the client has set_send_blocking(0) and the
+    # service event loop drains queued frames when the connection
+    # becomes writable.  Outside a service we still block until the
+    # bytes are committed so short-lived caller code keeps the
+    # synchronous semantics it has always had.
+    return $self->try_send_message($peer_id, $payload)
+        unless $self->send_blocking;
+
     my $entry = $self->{+CONNECTIONS}->{$peer_id};
 
     if (!$entry) {
@@ -487,49 +521,168 @@ sub send_message {
         $entry = $self->_connect_to_peer($peer_id);
     }
 
-    # Try to send; on EPIPE-style failure attempt one reconnect if peer is a
-    # listener, then drop on second failure.
-    my $ok;
-    my $err;
-    {
-        local $@;
-        $ok = eval { $self->_send_frame($entry->{fh}, $payload); 1 };
-        $err = $@;
+    # Drain any leftover non-blocking partial frame for this peer first,
+    # otherwise our new frame would interleave with it on the wire.
+    $self->_flush_send_buffer($entry) if length $entry->{send_buffer};
+
+    # Send the frame.  No auto-reconnect: SOCK_STREAM peer churn is the
+    # caller's problem, just like with sockets generally.  Auto-retrying
+    # would also silently lose any queued bytes already in send_buffer
+    # that were flushed (or partially flushed) before the EPIPE.
+    my $ok = eval { $self->_send_frame($entry->{fh}, $payload); 1 };
+    unless ($ok) {
+        my $err = $@;
+        # Defensive eval: _close_connection only evals close() today, but
+        # future hooks could throw and would mask the real send error.
+        eval { $self->_close_connection($peer_id); 1 }
+            or warn "ConnectionUnix: error closing connection to '$peer_id' after send failure: $@";
+        die $err;
     }
-
-    if (!$ok) {
-        my $can_retry = !$entry->{retry_used} && $self->peer_is_listener($peer_id);
-        $self->_close_connection($peer_id);
-
-        die $err unless $can_retry;
-
-        my $new_entry;
-        my $reconnect_ok = eval { $new_entry = $self->_connect_to_peer($peer_id); 1 };
-        unless ($reconnect_ok) {
-            warn "ConnectionUnix: reconnect to '$peer_id' failed: $@";
-            die $err;
-        }
-
-        $new_entry->{retry_used} = 1;
-        my $resend_ok = eval { $self->_send_frame($new_entry->{fh}, $payload); 1 };
-        unless ($resend_ok) {
-            my $err2 = $@;
-            $self->_close_connection($peer_id);
-            die $err2;
-        }
-
-        $new_entry->{last_active} = time;
-        # Successful reconnect resets retry: clear it after a clean send so a
-        # later fault on this same fd still gets one retry.
-        $new_entry->{retry_used} = 0;
-        $entry = $new_entry;
-    }
-    else {
-        $entry->{last_active} = time;
-    }
+    $entry->{last_active} = time;
 
     $self->{+STATS}->{sent}->{$msg->{to}}++;
     return 1;
+}
+
+# --- Role::Outbox plumbing ---
+#
+# Connection-oriented framing means a partial write of a frame must NOT be
+# re-sent from the start: the peer would see a corrupt mix of trailing bytes
+# from the old attempt and length prefix from the new.  So instead of using
+# the role's whole-payload queue we maintain a per-connection
+# $entry->{send_buffer} of raw outbound bytes.  _outbox_try_write always
+# accepts the new frame (returns 1), appending to send_buffer if necessary,
+# and the role's queue stays empty.  The framework calls drain_pending /
+# writable_handles which we override to walk send_buffers instead.
+
+sub _outbox_try_write {
+    my ($self, $peer, $payload) = @_;
+
+    $self->pid_check;
+
+    my $entry = $self->{+CONNECTIONS}->{$peer};
+    if (!$entry) {
+        die "'$peer' is not a valid message recipient" unless $self->peer_exists($peer);
+        die "no active connection to '$peer' and peer is not listening"
+            unless $self->peer_is_listener($peer);
+        $entry = $self->_connect_to_peer($peer);
+    }
+
+    my $frame = pack('N', length $payload) . $payload;
+    $entry->{send_buffer} .= $frame;
+
+    my $flushed_ok = eval { $self->_flush_send_buffer($entry); 1 };
+    unless ($flushed_ok) {
+        my $err = $@;
+        # Hard write error (e.g. EPIPE).  Drop the connection and lose the
+        # in-flight bytes; future sends to this peer reconnect.
+        warn "ConnectionUnix: send to '$peer' failed: $err";
+        eval { $self->_close_connection($peer); 1 }
+            or warn "ConnectionUnix: error closing connection to '$peer' after send failure: $@";
+        return 1;
+    }
+
+    $entry->{last_active} = time;
+    $self->{+STATS}->{sent}->{$peer}++;
+    return 1;
+}
+
+sub _outbox_writable_handle {
+    my ($self, $peer) = @_;
+    my $entry = $self->{+CONNECTIONS}->{$peer} or return undef;
+    return $entry->{fh};
+}
+
+sub _outbox_set_blocking {
+    # Sockets stay non-blocking either way (reads need it).  send_message
+    # branches on send_blocking() to choose the synchronous _send_frame
+    # loop or the deferred-via-send_buffer path.
+    return;
+}
+
+sub _outbox_can_send {
+    my ($self, $peer) = @_;
+    my $entry = $self->{+CONNECTIONS}->{$peer} or return 0;
+    return length($entry->{send_buffer}) ? 0 : 1;
+}
+
+# Override the role's queue-based bookkeeping: our partial frames live in
+# per-connection send_buffers, not in the role's _OUTBOX hash, so the role
+# would otherwise always report "nothing pending" and the service loop
+# would never pick our writable handles.
+
+sub pending_sends {
+    my $self = shift;
+    my $n = 0;
+    for my $key (keys %{$self->{+CONNECTIONS} // {}}) {
+        next if $key =~ /^_pending_/;
+        my $entry = $self->{+CONNECTIONS}->{$key};
+        $n++ if length($entry->{send_buffer} // '');
+    }
+    return $n;
+}
+
+sub have_pending_sends {
+    my $self = shift;
+    for my $key (keys %{$self->{+CONNECTIONS} // {}}) {
+        next if $key =~ /^_pending_/;
+        return 1 if length($self->{+CONNECTIONS}->{$key}->{send_buffer} // '');
+    }
+    return 0;
+}
+
+sub pending_sends_to {
+    my ($self, $peer) = @_;
+    my $entry = $self->{+CONNECTIONS}->{$peer} or return 0;
+    return length($entry->{send_buffer} // '') ? 1 : 0;
+}
+
+sub drain_pending {
+    my $self = shift;
+
+    my $delivered = 0;
+    for my $key (keys %{$self->{+CONNECTIONS} // {}}) {
+        next if $key =~ /^_pending_/;
+        my $entry = $self->{+CONNECTIONS}->{$key};
+        next unless length($entry->{send_buffer} // '');
+
+        my $ok = eval { $self->_flush_send_buffer($entry); 1 };
+        unless ($ok) {
+            my $err = $@;
+            warn "ConnectionUnix: send to '$key' failed during drain: $err";
+            eval { $self->_close_connection($key); 1 }
+                or warn "ConnectionUnix: error closing connection to '$key' after drain failure: $@";
+            next;
+        }
+
+        if (!length($entry->{send_buffer})) {
+            $entry->{last_active} = time;
+            $delivered++;
+        }
+    }
+
+    return $delivered;
+}
+
+sub have_writable_handles {
+    my $self = shift;
+    for my $key (keys %{$self->{+CONNECTIONS} // {}}) {
+        next if $key =~ /^_pending_/;
+        return 1 if length($self->{+CONNECTIONS}->{$key}->{send_buffer} // '');
+    }
+    return 0;
+}
+
+sub writable_handles {
+    my $self = shift;
+    my @h;
+    for my $key (keys %{$self->{+CONNECTIONS} // {}}) {
+        next if $key =~ /^_pending_/;
+        my $entry = $self->{+CONNECTIONS}->{$key};
+        next unless length($entry->{send_buffer} // '');
+        push @h => $entry->{fh} if $entry->{fh};
+    }
+    return @h;
 }
 
 1;

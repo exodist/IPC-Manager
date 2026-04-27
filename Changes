@@ -1,5 +1,8 @@
 {{$NEXT}}
 
+    - Loosen the upper-bound timing assertion in t/unit/peer_active_timeout.t subtest 'positive timeout: returns 0 after timeout when peer never becomes active' from < 3s to < 10s. The previous bound fired on a CPAN smoker (perl 5.40.0, x86_64-linux) where peer_active('foo', 0.3) elapsed ~4.27s under heavy load (test-suite wallclock ~943s), even though peer_active itself behaved correctly. The lower bound (>= 0.25s) is unchanged, so the correctness assertion that the call waits at least the requested timeout still holds; the upper bound is only a runaway-wait guard, for which 10s gives loaded smokers headroom
+    - Loosen the upper-bound timing assertion in t/unit/Util.t subtest 'tinysleep sleeps for the requested duration' from < 1.0s to < 5.0s. The previous bound fired on three CPAN smokers (perl 5.40.2, 5.12.5, 5.40.4 on x86_64-linux) where tinysleep(0.1) elapsed up to ~1.42s under heavy load (test-suite wallclocks ~970-1172s), even though tinysleep returned promptly. The lower bound (>= 0.05s) is unchanged; the upper bound is only a runaway-sleep guard
+
 0.000034  2026-04-26 03:43:44-07:00 America/Los_Angeles
 
     - IPC::Manager::Client::ConnectionUnix::_drain_reads now early-returns "EOF" when its $fh argument is undef. During global destruction perl is free to destroy the IO::Socket::UNIX stored in $entry->{fh} before the Client's DESTROY runs disconnect, leaving $entry->{fh} undef when _read_messages / _resolve_pending walk the connection cache; the unguarded sysread then died with "Can't use an undefined value as a symbol reference" mid-shutdown. Treating a missing handle as already-closed lets the disconnect drain finish cleanly

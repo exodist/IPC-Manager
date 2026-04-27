@@ -2,7 +2,7 @@ package IPC::Manager::Client::AtomicPipe;
 use strict;
 use warnings;
 
-our $VERSION = '0.000035';
+our $VERSION = '0.000036';
 
 use File::Spec;
 use Atomic::Pipe;

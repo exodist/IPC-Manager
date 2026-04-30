@@ -1,5 +1,8 @@
 {{$NEXT}}
 
+    - Add [PruneCruft] to dist.ini so build artifacts (blib/,
+      pm_to_blib, MYMETA.*) no longer leak into release tarballs.
+
 0.000035  2026-04-26 20:18:58-07:00 America/Los_Angeles
 
     - Loosen the upper-bound timing assertion in t/unit/peer_active_timeout.t subtest 'positive timeout: returns 0 after timeout when peer never becomes active' from < 3s to < 10s. The previous bound fired on a CPAN smoker (perl 5.40.0, x86_64-linux) where peer_active('foo', 0.3) elapsed ~4.27s under heavy load (test-suite wallclock ~943s), even though peer_active itself behaved correctly. The lower bound (>= 0.25s) is unchanged, so the correctness assertion that the call waits at least the requested timeout still holds; the upper bound is only a runaway-wait guard, for which 10s gives loaded smokers headroom

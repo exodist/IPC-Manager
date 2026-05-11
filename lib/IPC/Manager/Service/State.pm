@@ -133,8 +133,15 @@ sub ipcm_service {
 
     $new_inst->pre_fork_hook();
 
-    $exec->{json} = IPC::Manager::Serializer::JSON->serialize(\%params)
-        if $exec;
+    # Forward the stay_in_begin flag (only) into the child's params.
+    # The 'exec' key is otherwise stripped on the parent side and the
+    # child needs to know whether import() should call _ipcm_service
+    # synchronously at BEGIN time (stay_in_begin = 1) or stash the
+    # closure for the -e snippet to fire at runtime.
+    $exec->{json} = IPC::Manager::Serializer::JSON->serialize({
+        %params,
+        exec => { stay_in_begin => $exec->{stay_in_begin} ? 1 : 0 },
+    }) if $exec;
 
     my $pid = fork // die "Could not fork: $!";
 

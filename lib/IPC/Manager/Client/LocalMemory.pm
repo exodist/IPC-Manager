@@ -95,6 +95,7 @@ sub init {
     }
 
     $store->{clients}{$id}{pid} = $$;
+    delete $store->{clients}{$id}{suspend_expires_at};
 }
 
 sub pending_messages { 0 }
@@ -215,6 +216,31 @@ sub post_disconnect_hook {
     my $store;
     unless (eval { $store = $self->_store; 1 }) { warn $@; return }
     delete $store->{clients}{$self->{id}};
+}
+
+sub pre_suspend_hook {
+    my $self = shift;
+    my (%params) = @_;
+
+    my $expires_at = $params{expires_at};
+    return unless defined $expires_at;
+
+    my $store;
+    unless (eval { $store = $self->_store; 1 }) { warn $@; return }
+
+    my $entry = $store->{clients}{$self->{id}} or return;
+    $entry->{suspend_expires_at} = $expires_at + 0;
+}
+
+sub peer_suspend_expires {
+    my $self = shift;
+    my ($peer_id) = @_;
+    return undef unless defined $peer_id && length $peer_id;
+
+    my $store;
+    return undef unless eval { $store = $self->_store; 1 };
+    my $entry = $store->{clients}{$peer_id} or return undef;
+    return $entry->{suspend_expires_at};
 }
 
 1;

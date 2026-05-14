@@ -122,7 +122,15 @@ sub init {
         # clean.  Suspended rows (pid IS NULL) keep their messages and
         # stats — the new registration is taking over an idle
         # connection slot, not replacing a dead one.
-        if ($row->{pid}) {
+        #
+        # The "already running" croak above filters out live pids (1
+        # or -1) so by the time we reach here a non-null pid is known
+        # gone.  Re-check pid_is_running == 0 explicitly anyway: it
+        # makes the reap precondition grep-discoverable and matches
+        # the pattern used in Base::FS / JSONFile / LocalMemory, so
+        # the rule "only reap when pid_is_running returns 0" is
+        # uniform across drivers.
+        if ($row->{pid} && !$self->pid_is_running($row->{pid})) {
             my $del_msgs  = $dbh->prepare("DELETE FROM ipcm_messages WHERE ${e}to${e} = ?")               or die $dbh->errstr;
             my $clr_stats = $dbh->prepare("UPDATE ipcm_peers SET ${e}stats${e} = NULL WHERE ${e}id${e} = ?") or die $dbh->errstr;
             $del_msgs->execute($self->{+ID})  or die $dbh->errstr;

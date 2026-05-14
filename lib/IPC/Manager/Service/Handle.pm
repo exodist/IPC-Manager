@@ -98,15 +98,59 @@ sub sync_request {
 # of expecting a response.  Protocols that advertise suspend_supported let
 # peers suspend cleanly (pidfile dropped) or restart under a new pid while
 # the registration stays in place — a missing pid or a pid mismatch is
-# therefore not a failure on its own, only full unregistration is.
-# Protocols without suspend treat a dead or missing pid as a permanent loss.
+# therefore not a failure on its own.  Protocols without suspend treat a
+# dead or missing pid as a permanent loss.
+#
+# Two extra fail-fast checks apply across all drivers so we do not block
+# forever on a peer that cannot respond:
+#
+# - SIGKILL detection: if we captured a pid at send time and the peer's
+#   stored pid still matches that captured pid (i.e. it has not been
+#   replaced by a fresh registration / restart-under-new-pid) AND that
+#   captured pid is genuinely gone, the peer was SIGKILL'd before any
+#   clean disconnect or suspend ran.  peer_exists would otherwise keep
+#   reporting it as live until peer_left sweep happens, which a Handle
+#   does not drive on its own.
+#
+# - Suspend expiry: if the peer announced an expected-resume deadline
+#   (see Client::suspend(expires_at => $epoch)) and the deadline has
+#   passed, the peer is treated as gone.  Protects against a peer that
+#   suspends and never returns.
 sub _pending_peer_active {
     my $self = shift;
     my ($peer, $pid) = @_;
 
     my $client = $self->client;
 
-    return $client->peer_exists($peer) ? 1 : 0 if $client->suspend_supported;
+    # Suspend-expiry probe is universal: any driver that records a
+    # deadline reports it here.  Default base method returns undef.
+    # ->can guard so callers passing mock clients (test fixtures) that
+    # do not inherit from IPC::Manager::Client are not forced to stub
+    # the method.
+    if ($client->can('peer_suspend_expires')) {
+        if (defined(my $exp = $client->peer_suspend_expires($peer))) {
+            return 0 if $exp < time;
+        }
+    }
+
+    if ($client->suspend_supported) {
+        return 0 unless $client->peer_exists($peer);
+
+        if (defined $pid) {
+            my $cur = $client->peer_pid($peer);
+            # If peer is still presenting the captured pid AND that pid
+            # is gone, the peer died ungracefully (SIGKILL) before any
+            # clean disconnect or suspend.  A pid mismatch (cur != $pid)
+            # means the peer rotated normally; an undef cur means the
+            # peer is mid-suspend or post-disconnect, both handled by
+            # the peer_exists path.
+            if (defined($cur) && $cur && $cur == $pid && !$client->pid_is_running($pid)) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+
     return $client->pid_is_running($pid) ? 1 : 0 if defined $pid;
     return $client->peer_active($peer);
 }

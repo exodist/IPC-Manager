@@ -73,9 +73,20 @@ sub init {
         }
     }
     else {
-        if ($store->{clients}{$id}) {
-            $self->{disconnected} = 1;
-            croak "Client '$id' already exists";
+        if (my $existing = $store->{clients}{$id}) {
+            # Reap-and-replace if the predecessor's pid is genuinely
+            # gone.  Only happens in fork-then-SIGKILL scenarios since
+            # LocalMemory is otherwise single-process.  "Running but
+            # not ours" (-1) and "ours" (1) both still croak.
+            my $epid = $existing->{pid};
+            if ($epid && !$self->pid_is_running($epid)) {
+                delete $store->{clients}{$id};
+                delete $store->{stats}{$id};
+            }
+            else {
+                $self->{disconnected} = 1;
+                croak "Client '$id' already exists";
+            }
         }
         $store->{clients}{$id} = {
             pid      => $$,
@@ -126,7 +137,38 @@ sub send_message {
 sub peers {
     my $self  = shift;
     my $store = $self->_store;
-    return sort grep { $_ ne $self->{id} } keys %{$store->{clients}};
+
+    my @out;
+    for my $peer (keys %{$store->{clients}}) {
+        next if $peer eq $self->{id};
+        my $pid = $store->{clients}{$peer}{pid};
+        next if $pid && !$self->pid_is_running($pid);
+        push @out => $peer;
+    }
+    return sort @out;
+}
+
+# Opportunistic sweep of stale peer entries.  Mirrors JSONFile/Base::FS
+# peer_left semantics.  In single-process LocalMemory use this is a
+# no-op; it only sees stale entries when a forked child registered then
+# died via SIGKILL.
+sub peer_left {
+    my $self  = shift;
+    my $store;
+    unless (eval { $store = $self->_store; 1 }) { warn $@; return 0 }
+
+    my $removed = 0;
+    for my $peer (keys %{$store->{clients}}) {
+        next if $peer eq $self->{id};
+        my $pid = $store->{clients}{$peer}{pid};
+        next unless $pid;
+        next if $self->pid_is_running($pid);
+
+        delete $store->{clients}{$peer};
+        delete $store->{stats}{$peer};
+        $removed++;
+    }
+    return $removed;
 }
 
 sub peer_exists {

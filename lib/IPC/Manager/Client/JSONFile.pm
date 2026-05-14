@@ -238,9 +238,23 @@ sub init {
         }
     }
     else {
-        if ($state->{clients}{$id}) {
-            $self->{disconnected} = 1;
-            croak "Client '$id' already exists";
+        if (my $existing = $state->{clients}{$id}) {
+            # If a previous registration died ungracefully (SIGKILL, OOM,
+            # parent-exit cascade) the entry persists because
+            # post_disconnect_hook never ran.  Reap-and-replace iff the
+            # recorded pid is genuinely gone.  "Running but not ours"
+            # (-1) and "ours" (1) both still croak as a legitimate
+            # collision.
+            my $epid = $existing->{pid};
+            if ($epid && !$self->pid_is_running($epid)) {
+                delete $state->{clients}{$id};
+                delete $state->{messages}{$id};
+                delete $state->{stats}{$id};
+            }
+            else {
+                $self->{disconnected} = 1;
+                croak "Client '$id' already exists";
+            }
         }
         $state->{clients}{$id} = {pid => $$};
         $state->{messages}{$id} //= [];
@@ -309,7 +323,53 @@ sub send_message {
 sub peers {
     my $self = shift;
     my ($state) = $self->_lock_read;
-    return sort grep { $_ ne $self->{id} } keys %{$state->{clients}};
+    my @out;
+    for my $peer (keys %{$state->{clients}}) {
+        next if $peer eq $self->{id};
+
+        # Filter out peers whose pid is genuinely gone (SIGKILL, OOM,
+        # parent-exit cascade — anything that bypasses DESTROY).
+        # peer_left() will reap the stale entry on the next service
+        # tick.  -1 (running but not ours) and 1 (ours) both keep the
+        # peer in the list.
+        my $pid = $state->{clients}{$peer}{pid};
+        next if $pid && !$self->pid_is_running($pid);
+
+        push @out => $peer;
+    }
+    return sort @out;
+}
+
+# Opportunistic sweep of stale peer entries.  Called by
+# IPC::Manager::Role::Service when peer_delta reports a peer departure
+# (peers() now produces the -1 delta for dead pids).  Only reaps entries
+# whose recorded pid is 0 from pid_is_running — never reaps "running but
+# not ours" pids, since those could be a foreign pid that happens to
+# overlap a stale registration.  Returns the number of entries removed.
+sub peer_left {
+    my $self = shift;
+
+    my ($state, $fh);
+    unless (eval { ($state, $fh) = $self->_lock_write; 1 }) {
+        warn $@;
+        return 0;
+    }
+
+    my $removed = 0;
+    for my $peer (keys %{$state->{clients}}) {
+        next if $peer eq $self->{id};
+        my $pid = $state->{clients}{$peer}{pid};
+        next unless $pid;
+        next if $self->pid_is_running($pid);
+
+        delete $state->{clients}{$peer};
+        delete $state->{messages}{$peer};
+        delete $state->{stats}{$peer};
+        $removed++;
+    }
+
+    $self->_commit($state, $fh);
+    return $removed;
 }
 
 sub peer_exists {

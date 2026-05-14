@@ -186,6 +186,57 @@ sub peer_pid_file {
     return File::Spec->catfile($self->{+ROUTE}, $self->on_disk_name($peer_id) . ".pid");
 }
 
+# Read a pid out of the pidfile keyed by on-disk name.  Returns an integer
+# pid, or 0 when the pidfile is absent / unreadable / malformed.  Used by
+# init(), peer_left(), and peers() to decide whether a peer's on-disk
+# entry is still alive.
+sub _read_peer_pidfile {
+    my ($self, $on_disk) = @_;
+    return 0 unless defined $on_disk && length $on_disk;
+
+    my $pidfile = File::Spec->catfile($self->{+ROUTE}, "$on_disk.pid");
+    return 0 unless -f $pidfile;
+
+    open(my $fh, '<', $pidfile) or return 0;
+    chomp(my $pid = <$fh>);
+    close($fh);
+
+    return 0 unless defined $pid && $pid =~ m/^[0-9]+\z/;
+    return $pid + 0;
+}
+
+# Remove all on-disk artifacts for the given peer id: the path (file or
+# directory), plus the .pid, .name, .resume, and .stats sidecars.
+sub _reap_peer_artifacts {
+    my ($self, $peer_id) = @_;
+    return $self->_reap_peer_artifacts_by_on_disk($self->on_disk_name($peer_id));
+}
+
+# On-disk-name variant of _reap_peer_artifacts.  Used by peer_left() so we
+# do not need to reverse the on-disk hash to a real peer id (the caller
+# may have already discarded that mapping).
+sub _reap_peer_artifacts_by_on_disk {
+    my ($self, $on_disk) = @_;
+    return 0 unless defined $on_disk && length $on_disk;
+
+    my $route = $self->{+ROUTE};
+    my $path  = File::Spec->catfile($route, $on_disk);
+
+    # remove_tree handles both regular files and directories, so it
+    # works for socket-typed and dir-typed FS drivers uniformly.
+    remove_tree($path, {keep_root => 0, safe => 1}) if -e $path;
+
+    for my $suffix (qw/pid name resume stats/) {
+        my $sidecar = File::Spec->catfile($route, "$on_disk.$suffix");
+        unlink($sidecar) if -e $sidecar;
+        # also clear any half-written .pend left from an interrupted write
+        my $pend = "$sidecar.pend";
+        unlink($pend) if -e $pend;
+    }
+
+    return 1;
+}
+
 sub init {
     my $self = shift;
 
@@ -206,7 +257,21 @@ sub init {
         }
     }
     else {
-        croak "${id} ${pt} already exists" if -e $path;
+        if (-e $path) {
+            # If a previous registration died ungracefully (SIGKILL, OOM,
+            # parent-exit cascade) the on-disk artifacts persist because
+            # post_disconnect_hook never ran.  Reap the stale predecessor
+            # iff its recorded pid is genuinely gone.  "Running but not
+            # ours" (-1) and "ours" (1) both still croak: those are
+            # legitimate collisions.
+            my $existing_pid = $self->_read_peer_pidfile($self->on_disk_name($id));
+            if ($existing_pid && !$self->pid_is_running($existing_pid)) {
+                $self->_reap_peer_artifacts($id);
+            }
+            else {
+                croak "${id} ${pt} already exists";
+            }
+        }
         $self->make_path($path);
         $self->_write_name_file;
     }
@@ -325,12 +390,56 @@ sub peers {
         my $path = File::Spec->catdir($self->{+ROUTE}, $file);
         next unless $self->check_path($path);
 
+        # Skip peers whose pidfile carries a pid that is genuinely gone.
+        # peer_left() will reap the artifacts on the next service tick.
+        # Peers without a pidfile (e.g. suspended) are left alone — they
+        # are not "dead", just inactive.
+        my $pid = $self->_read_peer_pidfile($file);
+        next if $pid && !$self->pid_is_running($pid);
+
         push @out => $self->_real_name_for_on_disk($file);
     }
 
     close($dh);
 
     return sort @out;
+}
+
+# Opportunistically sweep every stale peer entry in the route directory.
+# Called by IPC::Manager::Role::Service when peer_delta reports a peer
+# departure (see peers() above — the new pid-liveness filter makes the
+# delta accurate for SIGKILL'd peers).  Returns the number of entries
+# removed.
+#
+# Only reaps entries whose recorded pid is genuinely gone (pid_is_running
+# returns 0).  Foreign pids that happen to overlap a stale pidfile
+# (pid_is_running == -1) are left in place; the same rule the AtomicPipe
+# Atomic::Pipe-state sweep follows.
+sub peer_left {
+    my $self = shift;
+
+    my $route = $self->{+ROUTE};
+    return 0 unless defined $route && -d $route;
+
+    my $my_on_disk = $self->on_disk_name($self->{+ID});
+
+    my $removed = 0;
+    opendir(my $dh, $route) or return 0;
+    for my $file (readdir($dh)) {
+        next if $file eq $my_on_disk;
+        next if $file =~ m/^(\.|_)/;
+        next if $file =~ m/\.(?:pid|name|resume|stats)$/;
+
+        my $pid = $self->_read_peer_pidfile($file);
+        next unless $pid;                            # no pidfile == suspended
+        next if $self->pid_is_running($pid);         # 1 (ours) or -1 (foreign)
+
+        $self->_reap_peer_artifacts_by_on_disk($file);
+        $removed++;
+    }
+    closedir($dh);
+
+    return $removed;
 }
 
 sub peer_pid {

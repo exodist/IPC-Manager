@@ -186,6 +186,33 @@ sub peer_pid_file {
     return File::Spec->catfile($self->{+ROUTE}, $self->on_disk_name($peer_id) . ".pid");
 }
 
+sub peer_suspend_file {
+    my $self = shift;
+    my ($peer_id) = @_;
+
+    return File::Spec->catfile($self->{+ROUTE}, $self->on_disk_name($peer_id) . ".suspend");
+}
+
+# Returns the suspend-expiry epoch recorded by a peer, or undef when no
+# .suspend sidecar exists or its contents are unparseable.  Handle's
+# _pending_peer_active consults this to short-circuit awaits whose peer
+# announced a return-by deadline and missed it.
+sub peer_suspend_expires {
+    my $self = shift;
+    my ($peer_id) = @_;
+    return undef unless defined $peer_id && length $peer_id;
+
+    my $file = $self->peer_suspend_file($peer_id);
+    return undef unless -f $file;
+
+    open(my $fh, '<', $file) or return undef;
+    chomp(my $exp = <$fh>);
+    close($fh);
+
+    return undef unless defined $exp && $exp =~ m/^[0-9]+(?:\.[0-9]+)?\z/;
+    return $exp + 0;
+}
+
 # Read a pid out of the pidfile keyed by on-disk name.  Returns an integer
 # pid, or 0 when the pidfile is absent / unreadable / malformed.  Used by
 # init(), peer_left(), and peers() to decide whether a peer's on-disk
@@ -226,7 +253,7 @@ sub _reap_peer_artifacts_by_on_disk {
     # works for socket-typed and dir-typed FS drivers uniformly.
     remove_tree($path, {keep_root => 0, safe => 1}) if -e $path;
 
-    for my $suffix (qw/pid name resume stats/) {
+    for my $suffix (qw/pid name resume stats suspend/) {
         my $sidecar = File::Spec->catfile($route, "$on_disk.$suffix");
         unlink($sidecar) if -e $sidecar;
         # also clear any half-written .pend left from an interrupted write
@@ -281,6 +308,12 @@ sub init {
     $self->handles_for_peer_change if USE_INOTIFY();
 
     $self->write_pid;
+
+    # Registration overrides any in-flight suspension: the peer is back.
+    # Reap removed it for the SIGKILL-and-reuse path, but the RECONNECT
+    # path needs this too.
+    my $suspend_file = $self->peer_suspend_file($id);
+    unlink($suspend_file) if -e $suspend_file;
 }
 
 sub clear_pid {
@@ -355,7 +388,23 @@ sub post_disconnect_hook {
 
 sub pre_suspend_hook {
     my $self = shift;
+    my (%params) = @_;
+
     $self->clear_pid;
+
+    my $expires_at = $params{expires_at};
+    return unless defined $expires_at;
+
+    # Write the expected-resume epoch to a .suspend sidecar so
+    # peer_suspend_expires can return it.  Atomic-rename via .pend so a
+    # crash mid-write does not leave a half-written file that
+    # peer_suspend_expires would silently treat as "no deadline".
+    my $sidecar = $self->peer_suspend_file($self->{+ID});
+    my $pend    = "$sidecar.pend";
+    open(my $fh, '>', $pend) or die "Could not open suspend file '$pend': $!";
+    print $fh ($expires_at + 0);
+    close($fh);
+    rename($pend, $sidecar) or die "Could not rename '$pend' -> '$sidecar': $!";
 }
 
 sub reset_handles_for_peer_change { $_[0]->{+PEER_INOTIFY}->read }
@@ -385,7 +434,7 @@ sub peers {
     for my $file (readdir($dh)) {
         next if $file eq $my_on_disk;
         next if $file =~ m/^(\.|_)/;
-        next if $file =~ m/\.(?:pid|name|resume|stats)$/;
+        next if $file =~ m/\.(?:pid|name|resume|stats|suspend)$/;
 
         my $path = File::Spec->catdir($self->{+ROUTE}, $file);
         next unless $self->check_path($path);
@@ -428,7 +477,7 @@ sub peer_left {
     for my $file (readdir($dh)) {
         next if $file eq $my_on_disk;
         next if $file =~ m/^(\.|_)/;
-        next if $file =~ m/\.(?:pid|name|resume|stats)$/;
+        next if $file =~ m/\.(?:pid|name|resume|stats|suspend)$/;
 
         my $pid = $self->_read_peer_pidfile($file);
         next unless $pid;                            # no pidfile == suspended

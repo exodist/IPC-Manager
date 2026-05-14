@@ -114,6 +114,21 @@ sub init {
     my $e   = $self->escape;
 
     if ($row) {
+        # A non-null pid on an existing row means the predecessor died
+        # without running pre_disconnect_hook (the disconnect path
+        # clears pid to NULL; the suspend path clears pid but keeps
+        # active).  Treat that as SIGKILL'd-and-reap: drop the dead
+        # peer's stale inbox and stats so the new registration starts
+        # clean.  Suspended rows (pid IS NULL) keep their messages and
+        # stats — the new registration is taking over an idle
+        # connection slot, not replacing a dead one.
+        if ($row->{pid}) {
+            my $del_msgs  = $dbh->prepare("DELETE FROM ipcm_messages WHERE ${e}to${e} = ?")               or die $dbh->errstr;
+            my $clr_stats = $dbh->prepare("UPDATE ipcm_peers SET ${e}stats${e} = NULL WHERE ${e}id${e} = ?") or die $dbh->errstr;
+            $del_msgs->execute($self->{+ID})  or die $dbh->errstr;
+            $clr_stats->execute($self->{+ID}) or die $dbh->errstr;
+        }
+
         my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}active${e} = ?, ${e}pid${e} = ? WHERE ${e}id${e} = ?");
         $sth->execute(time, $self->{+PID}, $self->{+ID}) or die $dbh->errstr;
     }
@@ -168,10 +183,56 @@ sub peers {
 
     my $dbh = $self->dbh;
     my $e   = $self->escape;
-    my $sth = $dbh->prepare("SELECT ${e}id${e} FROM ipcm_peers WHERE ${e}id${e} != ? AND active IS NOT NULL ORDER BY ${e}id${e} ASC") or die $dbh->errstr;
+    my $sth = $dbh->prepare("SELECT ${e}id${e}, ${e}pid${e} FROM ipcm_peers WHERE ${e}id${e} != ? AND active IS NOT NULL ORDER BY ${e}id${e} ASC") or die $dbh->errstr;
     $sth->execute($self->{+ID});
 
-    return map { $_->[0] } @{$sth->fetchall_arrayref([0])};
+    my @out;
+    while (my $row = $sth->fetchrow_arrayref) {
+        my ($id, $pid) = @$row;
+        # Filter out peers whose pid is genuinely gone (SIGKILL, OOM,
+        # parent-exit cascade).  peer_left() will delete the stale row
+        # on the next service tick.  Foreign pids (-1) and our own (1)
+        # both stay in the list.
+        next if $pid && !$self->pid_is_running($pid);
+        push @out => $id;
+    }
+
+    return @out;
+}
+
+# Opportunistic sweep of stale peer rows.  Called by
+# IPC::Manager::Role::Service when peer_delta reports a peer departure
+# (peers() now produces the -1 delta for dead pids).  DELETE rather than
+# clear active=NULL: the row represents a peer registration that died
+# without going through pre_disconnect_hook, so its accumulated messages
+# and stats are also orphaned.  Returns the number of rows removed.
+sub peer_left {
+    my $self = shift;
+
+    my $dbh = $self->dbh;
+    my $e   = $self->escape;
+
+    my $sth = $dbh->prepare("SELECT ${e}id${e}, ${e}pid${e} FROM ipcm_peers WHERE ${e}id${e} != ? AND active IS NOT NULL") or die $dbh->errstr;
+    $sth->execute($self->{+ID}) or die $dbh->errstr;
+
+    my @dead;
+    while (my $row = $sth->fetchrow_arrayref) {
+        my ($id, $pid) = @$row;
+        next unless $pid;
+        next if $self->pid_is_running($pid);
+        push @dead => $id;
+    }
+
+    return 0 unless @dead;
+
+    my $del_peers = $dbh->prepare("DELETE FROM ipcm_peers WHERE ${e}id${e} = ?")    or die $dbh->errstr;
+    my $del_msgs  = $dbh->prepare("DELETE FROM ipcm_messages WHERE ${e}to${e} = ?") or die $dbh->errstr;
+    for my $id (@dead) {
+        $del_msgs->execute($id)  or die $dbh->errstr;
+        $del_peers->execute($id) or die $dbh->errstr;
+    }
+
+    return scalar @dead;
 }
 
 sub peer_pid {

@@ -37,10 +37,11 @@ sub table_sql {
     return (
         <<"        EOT",
             CREATE TABLE IF NOT EXISTS ipcm_peers(
-                "id"        VARCHAR(512)    NOT NULL PRIMARY KEY,
-                "pid"       INTEGER         DEFAULT NULL,
-                "active"    NUMERIC         DEFAULT EXTRACT(epoch FROM NOW()),
-                "stats"     BYTEA           DEFAULT NULL
+                "id"                VARCHAR(512)    NOT NULL PRIMARY KEY,
+                "pid"               INTEGER         DEFAULT NULL,
+                "active"            NUMERIC         DEFAULT EXTRACT(epoch FROM NOW()),
+                "stats"             BYTEA           DEFAULT NULL,
+                "suspend_expires"   NUMERIC         DEFAULT NULL
             );
         EOT
         <<"        EOT",
@@ -57,6 +58,10 @@ sub table_sql {
 }
 
 sub default_attrs { +{ AutoCommit => 1 } }
+
+sub migration_sql {
+    return ('ALTER TABLE ipcm_peers ADD COLUMN IF NOT EXISTS "suspend_expires" NUMERIC DEFAULT NULL');
+}
 
 sub spawn {
     my $class = shift;

@@ -22,6 +22,16 @@ use Object::HashBase qw{
 sub dsn       { croak "Not Implemented" }
 sub table_sql { croak "Not Implemented" }
 
+# Best-effort schema migrations applied after table_sql.  Each entry is
+# an SQL statement that may legitimately fail if the change is already
+# in effect (e.g. ALTER TABLE ADD COLUMN against a fresh table that
+# already has the column from table_sql).  init_db runs them inside
+# eval and swallows the error -- table_sql is the source of truth for
+# fresh installs; migration_sql only catches up pre-existing databases
+# created against an older schema.  Overridden per-driver because ALTER
+# syntax varies (column type, quoting).
+sub migration_sql { () }
+
 sub escape    { '' }
 sub blob_type { DBI::SQL_BLOB }
 
@@ -82,6 +92,13 @@ sub init_db {
         local $dbh->{PrintWarn} = 0;
         $dbh->do($sql) or die $dbh->errstr;
     }
+
+    for my $sql ($this->migration_sql) {
+        local $dbh->{PrintWarn}  = 0;
+        local $dbh->{PrintError} = 0;
+        local $dbh->{RaiseError} = 0;
+        eval { $dbh->do($sql); 1 };
+    }
 }
 
 sub default_attrs {}
@@ -137,8 +154,21 @@ sub init {
             $clr_stats->execute($self->{+ID}) or die $dbh->errstr;
         }
 
-        my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}active${e} = ?, ${e}pid${e} = ? WHERE ${e}id${e} = ?");
-        $sth->execute(time, $self->{+PID}, $self->{+ID}) or die $dbh->errstr;
+        # Re-registration also clears any in-flight suspend deadline
+        # so a returning peer does not strand a stale past-deadline
+        # value visible to awaiters.  Falls back to the legacy two-
+        # column UPDATE if the suspend_expires column predates the
+        # migration on this database.
+        my $updated = 0;
+        if (my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}active${e} = ?, ${e}pid${e} = ?, ${e}suspend_expires${e} = NULL WHERE ${e}id${e} = ?")) {
+            local $dbh->{PrintError} = 0;
+            local $dbh->{RaiseError} = 0;
+            $updated = $sth->execute(time, $self->{+PID}, $self->{+ID});
+        }
+        unless ($updated) {
+            my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}active${e} = ?, ${e}pid${e} = ? WHERE ${e}id${e} = ?");
+            $sth->execute(time, $self->{+PID}, $self->{+ID}) or die $dbh->errstr;
+        }
     }
     else {
         my $sth = $dbh->prepare("INSERT INTO ipcm_peers(${e}id${e}, ${e}pid${e}, ${e}active${e}) VALUES (?, ?, ?)") or die $dbh->errstr;
@@ -341,17 +371,66 @@ sub pre_disconnect_hook {
 
     my $dbh = $self->dbh;
     my $e   = $self->escape;
-    my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}pid${e} = NULL, active = NULL WHERE ${e}id${e} = ?") or die $dbh->errstr;
+    my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}pid${e} = NULL, ${e}active${e} = NULL, ${e}suspend_expires${e} = NULL WHERE ${e}id${e} = ?") or die $dbh->errstr;
     $sth->execute($self->{+ID}) or die $dbh->errstr;
 }
 
 sub pre_suspend_hook {
     my $self = shift;
+    my (%params) = @_;
+
+    my $expires_at = $params{expires_at};
 
     my $dbh = $self->dbh;
     my $e   = $self->escape;
-    my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}pid${e} = NULL WHERE ${e}id${e} = ?") or die $dbh->errstr;
+
+    # The deadline column may legitimately be absent on a pre-migration
+    # database; the eval-guarded migration in init_db may not have
+    # caught up yet on a long-running daemon.  Try the deadline-aware
+    # UPDATE first and fall back to the legacy two-column UPDATE on
+    # failure so suspend keeps working in degraded mode.
+    my $sth;
+    if (defined $expires_at) {
+        $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}pid${e} = NULL, ${e}suspend_expires${e} = ? WHERE ${e}id${e} = ?");
+        if ($sth) {
+            local $dbh->{PrintError} = 0;
+            local $dbh->{RaiseError} = 0;
+            return if $sth->execute($expires_at + 0, $self->{+ID});
+        }
+    }
+    else {
+        $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}pid${e} = NULL, ${e}suspend_expires${e} = NULL WHERE ${e}id${e} = ?");
+        if ($sth) {
+            local $dbh->{PrintError} = 0;
+            local $dbh->{RaiseError} = 0;
+            return if $sth->execute($self->{+ID});
+        }
+    }
+
+    # Fallback: schema predates suspend_expires.
+    $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}pid${e} = NULL WHERE ${e}id${e} = ?") or die $dbh->errstr;
     $sth->execute($self->{+ID}) or die $dbh->errstr;
+}
+
+sub peer_suspend_expires {
+    my $self = shift;
+    my ($peer_id) = @_;
+    return undef unless defined $peer_id && length $peer_id;
+
+    my $dbh = $self->dbh;
+    my $e   = $self->escape;
+
+    my $sth = $dbh->prepare("SELECT ${e}suspend_expires${e} FROM ipcm_peers WHERE ${e}id${e} = ?");
+    return undef unless $sth;
+
+    local $dbh->{PrintError} = 0;
+    local $dbh->{RaiseError} = 0;
+    return undef unless $sth->execute($peer_id);
+
+    my $row = $sth->fetchrow_arrayref;
+    $sth->finish;
+    return undef unless $row && defined $row->[0];
+    return $row->[0] + 0;
 }
 
 1;

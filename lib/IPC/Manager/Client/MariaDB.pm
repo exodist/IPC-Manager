@@ -35,10 +35,11 @@ sub table_sql {
     return (
         <<"        EOT",
             CREATE TABLE IF NOT EXISTS ipcm_peers(
-                `id`        VARCHAR(512)    NOT NULL PRIMARY KEY,
-                `pid`       INTEGER         DEFAULT NULL,
-                `active`    DOUBLE          DEFAULT UNIX_TIMESTAMP(),
-                `stats`     BLOB            DEFAULT NULL
+                `id`                VARCHAR(512)    NOT NULL PRIMARY KEY,
+                `pid`               INTEGER         DEFAULT NULL,
+                `active`            DOUBLE          DEFAULT UNIX_TIMESTAMP(),
+                `stats`             BLOB            DEFAULT NULL,
+                `suspend_expires`   DOUBLE          DEFAULT NULL
             );
         EOT
         <<"        EOT",
@@ -52,6 +53,10 @@ sub table_sql {
             );
         EOT
     );
+}
+
+sub migration_sql {
+    return ('ALTER TABLE ipcm_peers ADD COLUMN IF NOT EXISTS `suspend_expires` DOUBLE DEFAULT NULL');
 }
 
 sub spawn {

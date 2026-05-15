@@ -206,4 +206,68 @@ subtest 'JSONFile: reconnect clears suspend deadline' => sub {
     IPC::Manager::Client::JSONFile->unspawn($route);
 };
 
+# ----------------------------------------------------------------------
+# DBI (via SQLite): suspend deadline persisted in ipcm_peers, SIGKILL
+# detection through the suspend-supported branch.
+# ----------------------------------------------------------------------
+
+SKIP: {
+    my $skip = !eval { require IPC::Manager::Client::SQLite; IPC::Manager::Client::SQLite->viable };
+    skip "SQLite driver not available", 2 if $skip;
+
+    my $DBIC = 'IPC::Manager::Client::SQLite';
+
+    subtest 'DBI/SQLite: suspend-expiry round-trip + active resets it' => sub {
+        my $route = $DBIC->spawn(serializer => $S);
+
+        my $requester = $DBIC->connect('requester', $S, $route);
+        my $svc       = $DBIC->connect('svc',       $S, $route);
+        my $handle    = _make_handle($requester, 'svc');
+
+        $svc->suspend(expires_at => time - 1);
+        is($requester->peer_suspend_expires('svc'), in_set(D()), 'deadline persisted in DB');
+        ok(
+            !$handle->_pending_peer_active('svc', $$),
+            '_pending_peer_active reports past-deadline DBI suspend as gone',
+        );
+
+        # Future-deadline case still active
+        my $svc2 = $DBIC->connect('svc2', $S, $route);
+        $svc2->suspend(expires_at => time + 60);
+        ok(
+            $handle->_pending_peer_active('svc2', $$),
+            'future-deadline DBI suspend still active',
+        );
+
+        # Reconnecting clears the deadline
+        my $svc_back = $DBIC->reconnect('svc', $S, $route);
+        is($requester->peer_suspend_expires('svc'), undef, 'deadline cleared on reconnect');
+
+        $svc_back->disconnect;
+        $requester->disconnect;
+        $DBIC->unspawn($route);
+    };
+
+    subtest 'DBI/SQLite: SIGKILL detection in _pending_peer_active' => sub {
+        my $route = $DBIC->spawn(serializer => $S);
+
+        my $requester = $DBIC->connect('requester', $S, $route);
+        my $handle    = _make_handle($requester, 'doomed');
+
+        my $child_pid = kill_child_after(sub {
+            my $c = $DBIC->connect('doomed', $S, $route);
+            return $c;
+        });
+
+        ok($requester->peer_exists('doomed'), 'stale row present (no peer_left yet)');
+        ok(
+            !$handle->_pending_peer_active('doomed', $child_pid),
+            '_pending_peer_active reports SIGKILL\'d DBI peer as gone',
+        );
+
+        $requester->disconnect;
+        $DBIC->unspawn($route);
+    };
+}
+
 done_testing;

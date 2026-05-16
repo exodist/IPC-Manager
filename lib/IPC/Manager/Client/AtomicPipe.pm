@@ -112,10 +112,6 @@ sub get_messages {
 sub peer_left {
     my $self = shift;
 
-    # First let Base::FS sweep the on-disk artifacts (FIFO files plus
-    # .pid / .name / .resume / .stats sidecars) for any peer whose
-    # pidfile carries a dead pid.  Then do AtomicPipe's own
-    # Atomic::Pipe-state tag cleanup on top of that.
     my $removed = $self->SUPER::peer_left;
 
     my $p = $self->{+PIPE} or return $removed;
@@ -129,8 +125,6 @@ sub peer_left {
         my ($pid) = split /:/, $tag, 2;
         next unless $pid && $pid =~ m/^-?\d+$/;
 
-        # pid_is_running returns 1 (ours), -1 (running but not ours), or 0
-        # (gone).  Only clear the tag when the pid is genuinely gone.
         next if $self->pid_is_running($pid);
 
         delete $state->{parts}->{$tag};

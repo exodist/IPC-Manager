@@ -317,13 +317,6 @@ sub suspend {
     my (%params) = @_;
     $self->pid_check;
 
-    # Optional expected-resume deadline.  Drivers that persist it can
-    # query the value back via peer_suspend_expires($peer); Handle's
-    # _pending_peer_active short-circuits when the deadline elapses so
-    # awaiters do not block forever on a suspend that never returns.
-    # expires_in is a convenience for "$N seconds from now"; expires_at
-    # is the absolute epoch.  Drivers that do not implement storage
-    # silently ignore the argument.
     my $expires_at = $params{expires_at};
     $expires_at = time + $params{expires_in}
         if !defined($expires_at) && defined $params{expires_in};

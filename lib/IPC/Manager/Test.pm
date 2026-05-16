@@ -1157,32 +1157,20 @@ sub test_watch_pids {
             },
         );
 
-        # Capture failures into the ready_file payload so the parent can
-        # diagnose them, instead of producing an empty file when something
-        # below dies before close.
         my $resp_text = 'ERROR: unknown';
-        if (eval { my $resp = $handle->sync_request(wp_svc => 'ping');
-                   $resp_text = $resp->{response} // 'ERROR: undef response'; 1 }) {
-            # ok, $resp_text set above
-        }
-        else {
+        unless (eval { my $resp = $handle->sync_request(wp_svc => 'ping');
+                       $resp_text = $resp->{response} // 'ERROR: undef response'; 1 }) {
             my $err = $@ // 'unknown';
             chomp $err;
             $resp_text = "ERROR: $err";
         }
 
-        # Atomic-rename so the parent never observes a half-written
-        # ready_file.  An open(>) creates the target empty before the
-        # print runs, and on a loaded smoker the parent's existence-poll
-        # has fired inside that window -- which manifests as "GOT
-        # <UNDEF>" against the 'ok' check.
         my $pend = "$ready_file.pend";
         open my $fh, '>', $pend or die "open: $!";
         print $fh "$resp_text\n";
         close $fh;
         rename $pend, $ready_file or die "rename: $!";
 
-        # Exit — the service watches our pid and should terminate
         exit(0);
     }
 

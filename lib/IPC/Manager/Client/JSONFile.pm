@@ -239,12 +239,6 @@ sub init {
     }
     else {
         if (my $existing = $state->{clients}{$id}) {
-            # If a previous registration died ungracefully (SIGKILL, OOM,
-            # parent-exit cascade) the entry persists because
-            # post_disconnect_hook never ran.  Reap-and-replace iff the
-            # recorded pid is genuinely gone.  "Running but not ours"
-            # (-1) and "ours" (1) both still croak as a legitimate
-            # collision.
             my $epid = $existing->{pid};
             if ($epid && !$self->pid_is_running($epid)) {
                 delete $state->{clients}{$id};
@@ -261,8 +255,6 @@ sub init {
     }
 
     $state->{clients}{$id}{pid} = $$;
-
-    # Registration overrides any in-flight suspension: the peer is back.
     delete $state->{clients}{$id}{suspend_expires_at};
 
     $self->_commit($state, $fh);
@@ -330,11 +322,6 @@ sub peers {
     for my $peer (keys %{$state->{clients}}) {
         next if $peer eq $self->{id};
 
-        # Filter out peers whose pid is genuinely gone (SIGKILL, OOM,
-        # parent-exit cascade — anything that bypasses DESTROY).
-        # peer_left() will reap the stale entry on the next service
-        # tick.  -1 (running but not ours) and 1 (ours) both keep the
-        # peer in the list.
         my $pid = $state->{clients}{$peer}{pid};
         next if $pid && !$self->pid_is_running($pid);
 
@@ -343,12 +330,6 @@ sub peers {
     return sort @out;
 }
 
-# Opportunistic sweep of stale peer entries.  Called by
-# IPC::Manager::Role::Service when peer_delta reports a peer departure
-# (peers() now produces the -1 delta for dead pids).  Only reaps entries
-# whose recorded pid is 0 from pid_is_running — never reaps "running but
-# not ours" pids, since those could be a foreign pid that happens to
-# overlap a stale registration.  Returns the number of entries removed.
 sub peer_left {
     my $self = shift;
 
@@ -437,14 +418,8 @@ sub pre_suspend_hook {
     }
 
     my $entry = $state->{clients}{$self->{id}};
-    if ($entry) {
-        $entry->{suspend_expires_at} = $expires_at + 0;
-        $self->_commit($state, $fh);
-    }
-    else {
-        # Nothing to record against — release the lock.
-        $self->_commit($state, $fh);
-    }
+    $entry->{suspend_expires_at} = $expires_at + 0 if $entry;
+    $self->_commit($state, $fh);
 }
 
 sub peer_suspend_expires {

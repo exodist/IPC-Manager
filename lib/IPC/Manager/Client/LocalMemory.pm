@@ -74,10 +74,6 @@ sub init {
     }
     else {
         if (my $existing = $store->{clients}{$id}) {
-            # Reap-and-replace if the predecessor's pid is genuinely
-            # gone.  Only happens in fork-then-SIGKILL scenarios since
-            # LocalMemory is otherwise single-process.  "Running but
-            # not ours" (-1) and "ours" (1) both still croak.
             my $epid = $existing->{pid};
             if ($epid && !$self->pid_is_running($epid)) {
                 delete $store->{clients}{$id};
@@ -149,10 +145,6 @@ sub peers {
     return sort @out;
 }
 
-# Opportunistic sweep of stale peer entries.  Mirrors JSONFile/Base::FS
-# peer_left semantics.  In single-process LocalMemory use this is a
-# no-op; it only sees stale entries when a forked child registered then
-# died via SIGKILL.
 sub peer_left {
     my $self  = shift;
     my $store;

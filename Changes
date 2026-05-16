@@ -4,7 +4,7 @@
     - Chain AtomicPipe::peer_left to Base::FS SUPER so on-disk FIFO + sidecar reap runs alongside Atomic::Pipe state cleanup
     - Fix Test::test_watch_pids race: child writes ready-signal file via atomic rename and serializes errors into payload
     - Fix Service::Handle await_response/await_all_responses hang when peer dies on suspend_supported drivers; _pending_peer_active also checks captured-pid liveness
-    - Add suspend deadlines: Client::suspend accepts expires_at/expires_in; Handle treats missed deadline as peer-gone across JSONFile, LocalMemory, Base::FS (.suspend sidecar), Base::DBI (new suspend_expires column with eval-guarded migration)
+    - Add suspend deadlines: Client::suspend accepts expires_at/expires_in; Handle treats missed deadline as peer-gone across JSONFile, LocalMemory, Base::FS (.suspend sidecar), Base::DBI (new suspend_expires column)
 
 0.000036  2026-05-10 21:03:04-07:00 America/Los_Angeles
 

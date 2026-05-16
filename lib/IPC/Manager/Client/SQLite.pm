@@ -49,10 +49,6 @@ sub table_sql {
     );
 }
 
-sub migration_sql {
-    return ('ALTER TABLE ipcm_peers ADD COLUMN `suspend_expires` REAL DEFAULT NULL');
-}
-
 sub spawn {
     my $class = shift;
     my (%params) = @_;

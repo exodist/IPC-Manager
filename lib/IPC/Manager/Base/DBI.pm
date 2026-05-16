@@ -22,16 +22,6 @@ use Object::HashBase qw{
 sub dsn       { croak "Not Implemented" }
 sub table_sql { croak "Not Implemented" }
 
-# Best-effort schema migrations applied after table_sql.  Each entry is
-# an SQL statement that may legitimately fail if the change is already
-# in effect (e.g. ALTER TABLE ADD COLUMN against a fresh table that
-# already has the column from table_sql).  init_db runs them inside
-# eval and swallows the error -- table_sql is the source of truth for
-# fresh installs; migration_sql only catches up pre-existing databases
-# created against an older schema.  Overridden per-driver because ALTER
-# syntax varies (column type, quoting).
-sub migration_sql { () }
-
 sub escape    { '' }
 sub blob_type { DBI::SQL_BLOB }
 
@@ -92,13 +82,6 @@ sub init_db {
         local $dbh->{PrintWarn} = 0;
         $dbh->do($sql) or die $dbh->errstr;
     }
-
-    for my $sql ($this->migration_sql) {
-        local $dbh->{PrintWarn}  = 0;
-        local $dbh->{PrintError} = 0;
-        local $dbh->{RaiseError} = 0;
-        eval { $dbh->do($sql); 1 };
-    }
 }
 
 sub default_attrs {}
@@ -131,22 +114,8 @@ sub init {
     my $e   = $self->escape;
 
     if ($row) {
-        # A non-null pid on an existing row means the predecessor died
-        # without running pre_disconnect_hook (the disconnect path
-        # clears pid to NULL; the suspend path clears pid but keeps
-        # active).  Treat that as SIGKILL'd-and-reap: drop the dead
-        # peer's stale inbox and stats so the new registration starts
-        # clean.  Suspended rows (pid IS NULL) keep their messages and
-        # stats — the new registration is taking over an idle
-        # connection slot, not replacing a dead one.
-        #
-        # The "already running" croak above filters out live pids (1
-        # or -1) so by the time we reach here a non-null pid is known
-        # gone.  Re-check pid_is_running == 0 explicitly anyway: it
-        # makes the reap precondition grep-discoverable and matches
-        # the pattern used in Base::FS / JSONFile / LocalMemory, so
-        # the rule "only reap when pid_is_running returns 0" is
-        # uniform across drivers.
+        # Predecessor died without pre_disconnect_hook (SIGKILL etc).
+        # Reap stale inbox + stats; suspended rows (pid IS NULL) are left alone.
         if ($row->{pid} && !$self->pid_is_running($row->{pid})) {
             my $del_msgs  = $dbh->prepare("DELETE FROM ipcm_messages WHERE ${e}to${e} = ?")               or die $dbh->errstr;
             my $clr_stats = $dbh->prepare("UPDATE ipcm_peers SET ${e}stats${e} = NULL WHERE ${e}id${e} = ?") or die $dbh->errstr;
@@ -154,21 +123,8 @@ sub init {
             $clr_stats->execute($self->{+ID}) or die $dbh->errstr;
         }
 
-        # Re-registration also clears any in-flight suspend deadline
-        # so a returning peer does not strand a stale past-deadline
-        # value visible to awaiters.  Falls back to the legacy two-
-        # column UPDATE if the suspend_expires column predates the
-        # migration on this database.
-        my $updated = 0;
-        if (my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}active${e} = ?, ${e}pid${e} = ?, ${e}suspend_expires${e} = NULL WHERE ${e}id${e} = ?")) {
-            local $dbh->{PrintError} = 0;
-            local $dbh->{RaiseError} = 0;
-            $updated = $sth->execute(time, $self->{+PID}, $self->{+ID});
-        }
-        unless ($updated) {
-            my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}active${e} = ?, ${e}pid${e} = ? WHERE ${e}id${e} = ?");
-            $sth->execute(time, $self->{+PID}, $self->{+ID}) or die $dbh->errstr;
-        }
+        my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}active${e} = ?, ${e}pid${e} = ?, ${e}suspend_expires${e} = NULL WHERE ${e}id${e} = ?") or die $dbh->errstr;
+        $sth->execute(time, $self->{+PID}, $self->{+ID}) or die $dbh->errstr;
     }
     else {
         my $sth = $dbh->prepare("INSERT INTO ipcm_peers(${e}id${e}, ${e}pid${e}, ${e}active${e}) VALUES (?, ?, ?)") or die $dbh->errstr;
@@ -227,10 +183,6 @@ sub peers {
     my @out;
     while (my $row = $sth->fetchrow_arrayref) {
         my ($id, $pid) = @$row;
-        # Filter out peers whose pid is genuinely gone (SIGKILL, OOM,
-        # parent-exit cascade).  peer_left() will delete the stale row
-        # on the next service tick.  Foreign pids (-1) and our own (1)
-        # both stay in the list.
         next if $pid && !$self->pid_is_running($pid);
         push @out => $id;
     }
@@ -238,12 +190,6 @@ sub peers {
     return @out;
 }
 
-# Opportunistic sweep of stale peer rows.  Called by
-# IPC::Manager::Role::Service when peer_delta reports a peer departure
-# (peers() now produces the -1 delta for dead pids).  DELETE rather than
-# clear active=NULL: the row represents a peer registration that died
-# without going through pre_disconnect_hook, so its accumulated messages
-# and stats are also orphaned.  Returns the number of rows removed.
 sub peer_left {
     my $self = shift;
 
@@ -384,32 +330,8 @@ sub pre_suspend_hook {
     my $dbh = $self->dbh;
     my $e   = $self->escape;
 
-    # The deadline column may legitimately be absent on a pre-migration
-    # database; the eval-guarded migration in init_db may not have
-    # caught up yet on a long-running daemon.  Try the deadline-aware
-    # UPDATE first and fall back to the legacy two-column UPDATE on
-    # failure so suspend keeps working in degraded mode.
-    my $sth;
-    if (defined $expires_at) {
-        $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}pid${e} = NULL, ${e}suspend_expires${e} = ? WHERE ${e}id${e} = ?");
-        if ($sth) {
-            local $dbh->{PrintError} = 0;
-            local $dbh->{RaiseError} = 0;
-            return if $sth->execute($expires_at + 0, $self->{+ID});
-        }
-    }
-    else {
-        $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}pid${e} = NULL, ${e}suspend_expires${e} = NULL WHERE ${e}id${e} = ?");
-        if ($sth) {
-            local $dbh->{PrintError} = 0;
-            local $dbh->{RaiseError} = 0;
-            return if $sth->execute($self->{+ID});
-        }
-    }
-
-    # Fallback: schema predates suspend_expires.
-    $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}pid${e} = NULL WHERE ${e}id${e} = ?") or die $dbh->errstr;
-    $sth->execute($self->{+ID}) or die $dbh->errstr;
+    my $sth = $dbh->prepare("UPDATE ipcm_peers SET ${e}pid${e} = NULL, ${e}suspend_expires${e} = ? WHERE ${e}id${e} = ?") or die $dbh->errstr;
+    $sth->execute(defined($expires_at) ? $expires_at + 0 : undef, $self->{+ID}) or die $dbh->errstr;
 }
 
 sub peer_suspend_expires {
@@ -420,12 +342,8 @@ sub peer_suspend_expires {
     my $dbh = $self->dbh;
     my $e   = $self->escape;
 
-    my $sth = $dbh->prepare("SELECT ${e}suspend_expires${e} FROM ipcm_peers WHERE ${e}id${e} = ?");
-    return undef unless $sth;
-
-    local $dbh->{PrintError} = 0;
-    local $dbh->{RaiseError} = 0;
-    return undef unless $sth->execute($peer_id);
+    my $sth = $dbh->prepare("SELECT ${e}suspend_expires${e} FROM ipcm_peers WHERE ${e}id${e} = ?") or die $dbh->errstr;
+    $sth->execute($peer_id) or die $dbh->errstr;
 
     my $row = $sth->fetchrow_arrayref;
     $sth->finish;

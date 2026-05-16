@@ -59,10 +59,6 @@ sub table_sql {
 
 sub default_attrs { +{ AutoCommit => 1 } }
 
-sub migration_sql {
-    return ('ALTER TABLE ipcm_peers ADD COLUMN IF NOT EXISTS "suspend_expires" NUMERIC DEFAULT NULL');
-}
-
 sub spawn {
     my $class = shift;
     my (%params) = @_;

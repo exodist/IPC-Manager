@@ -15,8 +15,8 @@ use Object::HashBase qw{
 };
 
 sub _viable {
-    require DBD::mysql;
-    DBD::mysql->VERSION('4.00');
+    require DBD::MariaDB;
+    DBD::MariaDB->VERSION('1.00');
     require DBIx::QuickDB;
     DBIx::QuickDB->VERSION('0.000040');
     my ($ok, $fqn, $why) = DBIx::QuickDB->check_driver('DBIx::QuickDB::Driver::MySQL', {bootstrap => 1, autostart => 1});

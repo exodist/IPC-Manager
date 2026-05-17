@@ -6,6 +6,7 @@
     - Fix Service::Handle await_response/await_all_responses hang when peer dies on suspend_supported drivers; _pending_peer_active also checks captured-pid liveness
     - Add suspend deadlines: Client::suspend accepts expires_at/expires_in; Handle treats missed deadline as peer-gone across JSONFile, LocalMemory, Base::FS (.suspend sidecar), Base::DBI (new suspend_expires column)
     - Run MariaDB/MySQL/PostgreSQL tests against every ~/dbs/<prefix>-* installation: new IPC::Manager::Test::DBVersions helper forks an AsyncSubtest per discovered version with $ENV{PATH} pointing at that version's bin dir; falls back to system PATH when ~/dbs is missing; skip_all when neither yields a viable driver
+    - Drop DBD::mysql dependency: IPC::Manager::Client::MySQL now requires DBD::MariaDB (DBIx::QuickDB::Driver::MySQL prefers it and emits dbi:MariaDB DSN when available). Lets MariaDB-only hosts run the MySQL client without an alternate-lib-location DBD::mysql build.
 
 0.000036  2026-05-10 21:03:04-07:00 America/Los_Angeles
 

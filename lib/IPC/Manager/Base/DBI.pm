@@ -415,6 +415,33 @@ example mysql and sqlite use '`', but postgresql uses '"'.
 Used during spawn to put the necessary tables into the database if they are not
 already present.
 
+You may pass C<< dbh => $dbh >> to reuse an already-connected DBI handle
+instead of having C<init_db> open one from the DSN.
+
+=item $dbh = $class_or_obj->dbh(dbh => $dbh)
+
+=item $dbh = $obj->dbh
+
+=item $dbh = $class->dbh(dsn => $dsn, user => $u, pass => $p, attrs => \%a)
+
+Get the database handle. When called with a C<< dbh => $dbh >> parameter
+the supplied handle is returned (and cached on an instance) without
+consulting the DSN. Without that parameter, an instance returns its cached
+handle if it is still active, otherwise reconnects via C<< DBI->connect >>
+using the instance's stored DSN / user / pass / attrs. As a class method
+this unconditionally opens a fresh connection from the supplied parameters.
+
+=item $route = $class_or_obj->route_from_dbh($dbh)
+
+Reassemble a route from a connected DBI handle. The default builds
+C<< "dbi:$drv:$name" >> from C<< $dbh->{Driver}{Name} >> and
+C<< $dbh->{Name} >>. L<IPC::Manager::Client::SQLite> overrides this to
+return the bare db file path because that is its route format.
+
+This is what C<ipcm_spawn(dbh => $dbh)> calls to derive the route stored on
+the resulting Spawn object's info string. See
+L<IPC::Manager/"Spawning against an existing DBI handle">.
+
 =item $password = $con->pass
 
 Connection password.

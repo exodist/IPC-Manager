@@ -32,6 +32,11 @@ sub dbh {
     my $this = shift;
     my (%params) = @_;
 
+    if ($params{dbh}) {
+        $this->{+DBH} = $params{dbh} if blessed($this);
+        return $params{dbh};
+    }
+
     if (blessed($this) && $this->{+DBH}) {
         $this->pid_check;
 
@@ -71,6 +76,11 @@ sub dbh {
     $this->{+DBH} = $dbh if blessed($this);
 
     return $dbh;
+}
+
+sub route_from_dbh {
+    my ($class_or_self, $dbh) = @_;
+    return "dbi:" . $dbh->{Driver}->{Name} . ":" . $dbh->{Name};
 }
 
 sub init_db {

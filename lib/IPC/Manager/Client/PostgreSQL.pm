@@ -65,7 +65,10 @@ sub spawn {
 
     my $dsn = $params{route};
 
-    unless ($dsn) {
+    if (!$dsn && $params{dbh}) {
+        $dsn = $params{+ROUTE} = $class->route_from_dbh($params{dbh});
+    }
+    elsif (!$dsn) {
         require DBIx::QuickDB;
         my $qdb = DBIx::QuickDB->build_db(pg_db => {driver => 'PostgreSQL'});
         $params{+QDB}  = $qdb;

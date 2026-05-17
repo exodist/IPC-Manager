@@ -7,6 +7,7 @@
     - Add suspend deadlines: Client::suspend accepts expires_at/expires_in; Handle treats missed deadline as peer-gone across JSONFile, LocalMemory, Base::FS (.suspend sidecar), Base::DBI (new suspend_expires column)
     - Run MariaDB/MySQL/PostgreSQL tests against every ~/dbs/<prefix>-* installation: new IPC::Manager::Test::DBVersions helper forks an AsyncSubtest per discovered version with $ENV{PATH} pointing at that version's bin dir; falls back to system PATH when ~/dbs is missing; skip_all when neither yields a viable driver
     - Drop DBD::mysql dependency: IPC::Manager::Client::MySQL now requires DBD::MariaDB (DBIx::QuickDB::Driver::MySQL prefers it and emits dbi:MariaDB DSN when available). Lets MariaDB-only hosts run the MySQL client without an alternate-lib-location DBD::mysql build.
+    - ipcm_spawn(dbh => $dbh) and ipcm_connect($id, undef, dbh => $dbh): pass a pre-connected DBI handle instead of letting the protocol build its own. Protocol auto-detected from $dbh->{Driver}{Name} (Pg/MariaDB/mysql/SQLite); route reassembled from $dbh->{Name} so the spawn->info string remains usable by peers that connect via the DSN path. Useful for embedding the IPC bus inside an app that already owns a DBI connection without forcing it to bootstrap a separate one.
 
 0.000036  2026-05-10 21:03:04-07:00 America/Los_Angeles
 

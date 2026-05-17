@@ -79,6 +79,24 @@ sub _parse_protocol {
     return $protocol;
 }
 
+# Map DBI driver name (from $dbh->{Driver}{Name}) to an
+# IPC::Manager::Client::* protocol class.
+my %DBD_PROTOCOL_MAP = (
+    Pg      => 'PostgreSQL',
+    MariaDB => 'MariaDB',
+    mysql   => 'MariaDB',
+    SQLite  => 'SQLite',
+);
+
+sub _protocol_from_dbh {
+    my $dbh = shift;
+    my $drv = eval { $dbh->{Driver}->{Name} }
+        or croak "Could not introspect DBI driver from \$dbh: $@";
+    my $proto = $DBD_PROTOCOL_MAP{$drv}
+        or croak "No IPC::Manager protocol mapping for DBI driver '$drv'";
+    return _parse_protocol($proto);
+}
+
 sub _serializer_class {
     my $name = shift;
     $name = "IPC::Manager::Serializer::$name"
@@ -121,7 +139,27 @@ sub _parse_serializer {
 sub _connect {
     my ($meth, $id, $cinfo, %params) = @_;
 
-    my ($protocol, $serializer, $route) = _parse_cinfo($cinfo);
+    # Two cinfo shapes:
+    #   - normal cinfo (string/arrayref): parse it for [protocol, serializer, route]
+    #   - hashref of params (caller passes dbh + protocol omitted): derive
+    #     protocol from $dbh, route from $dbh->{Driver}{Name} + ->{Name}
+    if (ref($cinfo) eq 'HASH') {
+        %params = (%$cinfo, %params);
+        $cinfo = undef;
+    }
+
+    my ($protocol, $serializer, $route);
+    if (!defined($cinfo) && $params{dbh}) {
+        $protocol   = delete($params{protocol})
+            ? _parse_protocol(delete $params{protocol})
+            : _protocol_from_dbh($params{dbh});
+        require_mod($protocol);
+        $route      = delete($params{route}) // $protocol->route_from_dbh($params{dbh});
+        $serializer = _parse_serializer(delete($params{serializer}) // ipcm_default_serializer());
+    }
+    else {
+        ($protocol, $serializer, $route) = _parse_cinfo($cinfo);
+    }
 
     return $protocol->$meth($id, $serializer, $route, %params);
 }
@@ -191,7 +229,11 @@ sub ipcm_spawn {
     my $protocol        = delete $params{protocol}        // ipcm_default_protocol();
     my $protocols       = delete $params{protocols}       // ipcm_default_protocol_list();
 
-    if ($protocol) {
+    if (!$protocol && $params{dbh}) {
+        $protocol = _protocol_from_dbh($params{dbh});
+        require_mod($protocol);
+    }
+    elsif ($protocol) {
         $protocol = _parse_protocol($protocol);
         require_mod($protocol);
     }

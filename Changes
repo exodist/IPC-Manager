@@ -1,5 +1,7 @@
 {{$NEXT}}
 
+0.000037  2026-05-16 18:22:44-07:00 America/Los_Angeles
+
     - Fix peer-registration leak across all shared-state drivers when peer dies ungracefully (SIGKILL/segfault/OOM); reap stale dead-pid entries on registration, filter peers(), implement peer_left sweeps (Base::FS, Base::DBI, JSONFile, LocalMemory)
     - Chain AtomicPipe::peer_left to Base::FS SUPER so on-disk FIFO + sidecar reap runs alongside Atomic::Pipe state cleanup
     - Fix Test::test_watch_pids race: child writes ready-signal file via atomic rename and serializes errors into payload
